@@ -1,0 +1,43 @@
+{
+  "character": "officer",
+  "messages": {
+    "zh": [
+      { "id": "officer_a_1", "group": "A", "text": "你今天做得很棒", "condition": "general" },
+      { "id": "officer_a_2", "group": "A", "text": "你很努力囉", "condition": "general" },
+      { "id": "officer_a_3", "group": "A", "text": "你的努力 我看見囉", "condition": "general" },
+      { "id": "officer_a_4", "group": "A", "text": "不錯不錯", "condition": "short_session" },
+      { "id": "officer_a_5", "group": "A", "text": "你做到了", "condition": "long_session" },
+      { "id": "officer_b_6", "group": "B", "text": "辛苦了，去休息吧", "condition": "general" },
+      { "id": "officer_b_7", "group": "B", "text": "今天就到這裡", "condition": "general" },
+      { "id": "officer_b_8", "group": "B", "text": "該下班了，我也是", "condition": "general" },
+      { "id": "officer_b_9", "group": "B", "text": "收工 go go~", "condition": "general" },
+      { "id": "officer_b_10", "group": "B", "text": "明天見", "condition": "general" },
+      { "id": "officer_c_11", "group": "C", "text": "慢慢來也很好", "condition": "general" },
+      { "id": "officer_c_12", "group": "C", "text": "累了就歇", "condition": "general" },
+      { "id": "officer_c_13", "group": "C", "text": "安靜的人很厲害", "condition": "general" },
+      { "id": "officer_c_14", "group": "C", "text": "又一天，太好了", "condition": "cumulative_5_days" },
+      { "id": "officer_c_15", "group": "C", "text": "全體解散", "condition": "general" }
+    ],
+    "en": [
+      { "id": "officer_a_1", "group": "A", "text": "Well done. Now rest.", "condition": "general" },
+      { "id": "officer_a_2", "group": "A", "text": "You worked hard.", "condition": "general" },
+      { "id": "officer_a_3", "group": "A", "text": "I saw all of it.", "condition": "general" },
+      { "id": "officer_a_4", "group": "A", "text": "Not bad.", "condition": "short_session" },
+      { "id": "officer_a_5", "group": "A", "text": "You made it through.", "condition": "long_session" },
+      { "id": "officer_b_6", "group": "B", "text": "Take a rest. You earned it.", "condition": "general" },
+      { "id": "officer_b_7", "group": "B", "text": "That's enough for today.", "condition": "general" },
+      { "id": "officer_b_8", "group": "B", "text": "Off duty. Both of us.", "condition": "general" },
+      { "id": "officer_b_9", "group": "B", "text": "Wrap it up~", "condition": "general" },
+      { "id": "officer_b_10", "group": "B", "text": "See you tomorrow.", "condition": "general" },
+      { "id": "officer_c_11", "group": "C", "text": "Easy does it.", "condition": "general" },
+      { "id": "officer_c_12", "group": "C", "text": "Rest when you need to.", "condition": "general" },
+      { "id": "officer_c_13", "group": "C", "text": "Quiet folks are strong.", "condition": "general" },
+      { "id": "officer_c_14", "group": "C", "text": "Another day. Good.", "condition": "cumulative_5_days" },
+      { "id": "officer_c_15", "group": "C", "text": "All clear. Dismissed.", "condition": "general" }
+    ]
+  },
+  "suffixes": {
+    "zh": ["*嗯。*", "*哼。*"],
+    "en": ["*hmm.*", "*hmph.*"]
+  }
+}

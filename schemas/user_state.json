@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UserState",
+  "description": "Primary user state for Keep Watch — stored locally only",
+  "type": "object",
+  "example": {
+    "version": "1.0.0",
+    "first_used_at": "2026-02-28T10:23:00Z",
+    "total_focus_seconds": 169200,
+    "total_focus_days": 14,
+    "today": {
+      "date": "2026-05-16",
+      "seconds": 5100
+    },
+    "completions": {
+      "timer_count": 18,
+      "pomodoro_count": 7,
+      "longest_session_seconds": 7800
+    },
+    "unlocks": {
+      "mouse": { "unlocked": true, "unlocked_at": "2026-02-28T10:23:00Z" },
+      "goldfish": { "unlocked": true, "unlocked_at": "2026-03-15T14:02:00Z" },
+      "astronaut": { "unlocked": true, "unlocked_at": "2026-04-02T09:11:00Z" },
+      "officer": { "unlocked": false, "unlocked_at": null },
+      "slot_5": { "unlocked": false, "unlocked_at": null }
+    },
+    "milestones_reached": ["10hr", "50hr"],
+    "current_scene": "mouse_cage",
+    "last_card_id": "mouse_a_3"
+  },
+  "properties": {
+    "version": { "type": "string" },
+    "first_used_at": { "type": "string", "format": "date-time" },
+    "total_focus_seconds": { "type": "integer", "minimum": 0 },
+    "total_focus_days": { "type": "integer", "minimum": 0, "description": "Cumulative distinct days with focus — never decreases" },
+    "today": {
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "seconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "completions": {
+      "type": "object",
+      "properties": {
+        "timer_count": { "type": "integer", "minimum": 0 },
+        "pomodoro_count": { "type": "integer", "minimum": 0 },
+        "longest_session_seconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "unlocks": {
+      "type": "object",
+      "properties": {
+        "mouse": { "$ref": "#/definitions/unlock" },
+        "goldfish": { "$ref": "#/definitions/unlock" },
+        "astronaut": { "$ref": "#/definitions/unlock" },
+        "officer": { "$ref": "#/definitions/unlock" },
+        "slot_5": { "$ref": "#/definitions/unlock" }
+      }
+    },
+    "milestones_reached": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["10hr", "50hr", "100hr", "500hr", "cumulative_14d", "cumulative_50d"] }
+    },
+    "current_scene": { "type": "string", "enum": ["mouse_cage", "fish_tank", "astronaut_space", "officer_room"] },
+    "last_card_id": { "type": "string", "description": "Last shown card message id, to avoid repeat" }
+  },
+  "definitions": {
+    "unlock": {
+      "type": "object",
+      "properties": {
+        "unlocked": { "type": "boolean" },
+        "unlocked_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    }
+  }
+}

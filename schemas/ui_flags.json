@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UIFlags",
+  "description": "One-time UI state flags — never reset except via full reset",
+  "type": "object",
+  "example": {
+    "tap_me_bubble_dismissed": true,
+    "first_completion_played": true,
+    "goldfish_reveal_played": true,
+    "astronaut_reveal_played": false,
+    "officer_reveal_played": false,
+    "slot_5_revealed": false
+  },
+  "properties": {
+    "tap_me_bubble_dismissed": { "type": "boolean", "description": "True after first successful Start" },
+    "first_completion_played": { "type": "boolean" },
+    "goldfish_reveal_played": { "type": "boolean" },
+    "astronaut_reveal_played": { "type": "boolean" },
+    "officer_reveal_played": { "type": "boolean" },
+    "slot_5_revealed": { "type": "boolean", "description": "Slot 5 appears in sidebar only after this is true" }
+  }
+}

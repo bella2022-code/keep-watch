@@ -1,0 +1,43 @@
+{
+  "character": "mouse",
+  "messages": {
+    "zh": [
+      { "id": "mouse_a_1", "group": "A", "text": "嘿，看到你了", "condition": "general" },
+      { "id": "mouse_a_2", "group": "A", "text": "你超棒", "condition": "general" },
+      { "id": "mouse_a_3", "group": "A", "text": "今天好厲害噢", "condition": "general" },
+      { "id": "mouse_a_4", "group": "A", "text": "短短一下也算", "condition": "short_session" },
+      { "id": "mouse_a_5", "group": "A", "text": "你撐好久噢", "condition": "long_session" },
+      { "id": "mouse_b_6", "group": "B", "text": "那...我先躲回去", "condition": "general" },
+      { "id": "mouse_b_7", "group": "B", "text": "今天到這裡吧", "condition": "general" },
+      { "id": "mouse_b_8", "group": "B", "text": "你也回家吧", "condition": "general" },
+      { "id": "mouse_b_9", "group": "B", "text": "收工嘍", "condition": "general" },
+      { "id": "mouse_b_10", "group": "B", "text": "掰掰", "condition": "general" },
+      { "id": "mouse_c_11", "group": "C", "text": "慢慢來沒關係", "condition": "general" },
+      { "id": "mouse_c_12", "group": "C", "text": "累了就窩起來", "condition": "general" },
+      { "id": "mouse_c_13", "group": "C", "text": "安靜的人，鼠也喜歡", "condition": "general" },
+      { "id": "mouse_c_14", "group": "C", "text": "又一天，太好了", "condition": "cumulative_5_days" },
+      { "id": "mouse_c_15", "group": "C", "text": "都很好", "condition": "general" }
+    ],
+    "en": [
+      { "id": "mouse_a_1", "group": "A", "text": "Hey. I see you.", "condition": "general" },
+      { "id": "mouse_a_2", "group": "A", "text": "You're so cool.", "condition": "general" },
+      { "id": "mouse_a_3", "group": "A", "text": "Pretty good today.", "condition": "general" },
+      { "id": "mouse_a_4", "group": "A", "text": "Even a short one counts.", "condition": "short_session" },
+      { "id": "mouse_a_5", "group": "A", "text": "You held on so long.", "condition": "long_session" },
+      { "id": "mouse_b_6", "group": "B", "text": "Imma hide now...", "condition": "general" },
+      { "id": "mouse_b_7", "group": "B", "text": "That's it for today.", "condition": "general" },
+      { "id": "mouse_b_8", "group": "B", "text": "You go home too.", "condition": "general" },
+      { "id": "mouse_b_9", "group": "B", "text": "Off duty~", "condition": "general" },
+      { "id": "mouse_b_10", "group": "B", "text": "Bye-bye.", "condition": "general" },
+      { "id": "mouse_c_11", "group": "C", "text": "Slow is fine.", "condition": "general" },
+      { "id": "mouse_c_12", "group": "C", "text": "Curl up if tired.", "condition": "general" },
+      { "id": "mouse_c_13", "group": "C", "text": "Quiet folks. Mouse likes 'em.", "condition": "general" },
+      { "id": "mouse_c_14", "group": "C", "text": "Another day. Good.", "condition": "cumulative_5_days" },
+      { "id": "mouse_c_15", "group": "C", "text": "All good.", "condition": "general" }
+    ]
+  },
+  "suffixes": {
+    "zh": ["*啾*", "*嘎吱*", "*吱~*"],
+    "en": ["*squeak*", "*nibble*", "*eek~*"]
+  }
+}

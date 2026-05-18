@@ -1,0 +1,43 @@
+{
+  "character": "goldfish",
+  "messages": {
+    "zh": [
+      { "id": "fish_a_1", "group": "A", "text": "咕嚕", "condition": "general", "note": "character signature" },
+      { "id": "fish_a_2", "group": "A", "text": "看到了", "condition": "general" },
+      { "id": "fish_a_3", "group": "A", "text": "你做到了", "condition": "general" },
+      { "id": "fish_a_4", "group": "A", "text": "你閃閃發光", "condition": "short_session" },
+      { "id": "fish_a_5", "group": "A", "text": "水都為你晃了一下", "condition": "long_session" },
+      { "id": "fish_b_6", "group": "B", "text": "該休息了", "condition": "general" },
+      { "id": "fish_b_7", "group": "B", "text": "今天好滿", "condition": "general" },
+      { "id": "fish_b_8", "group": "B", "text": "慢慢游回去", "condition": "general" },
+      { "id": "fish_b_9", "group": "B", "text": "水會記得你", "condition": "general" },
+      { "id": "fish_b_10", "group": "B", "text": "明天見", "condition": "general" },
+      { "id": "fish_c_11", "group": "C", "text": "慢慢來，水也慢慢的", "condition": "general" },
+      { "id": "fish_c_12", "group": "C", "text": "累了就漂著", "condition": "general" },
+      { "id": "fish_c_13", "group": "C", "text": "安靜很美", "condition": "general" },
+      { "id": "fish_c_14", "group": "C", "text": "又一圈漣漪，認得你", "condition": "cumulative_5_days" },
+      { "id": "fish_c_15", "group": "C", "text": "一切都很安穩", "condition": "general" }
+    ],
+    "en": [
+      { "id": "fish_a_1", "group": "A", "text": "*blub*", "condition": "general", "note": "character signature" },
+      { "id": "fish_a_2", "group": "A", "text": "I saw you.", "condition": "general" },
+      { "id": "fish_a_3", "group": "A", "text": "You did it.", "condition": "general" },
+      { "id": "fish_a_4", "group": "A", "text": "You glow.", "condition": "short_session" },
+      { "id": "fish_a_5", "group": "A", "text": "Even the water swayed.", "condition": "long_session" },
+      { "id": "fish_b_6", "group": "B", "text": "Time to rest.", "condition": "general" },
+      { "id": "fish_b_7", "group": "B", "text": "Today feels full.", "condition": "general" },
+      { "id": "fish_b_8", "group": "B", "text": "Swim home slow.", "condition": "general" },
+      { "id": "fish_b_9", "group": "B", "text": "The water remembers.", "condition": "general" },
+      { "id": "fish_b_10", "group": "B", "text": "See you tomorrow.", "condition": "general" },
+      { "id": "fish_c_11", "group": "C", "text": "Slow. Like water.", "condition": "general" },
+      { "id": "fish_c_12", "group": "C", "text": "Float if tired.", "condition": "general" },
+      { "id": "fish_c_13", "group": "C", "text": "Quiet is beautiful.", "condition": "general" },
+      { "id": "fish_c_14", "group": "C", "text": "Another ripple. I know it.", "condition": "cumulative_5_days" },
+      { "id": "fish_c_15", "group": "C", "text": "All is still.", "condition": "general" }
+    ]
+  },
+  "suffixes": {
+    "zh": ["*咕嚕*", "*咕嚕咕嚕*"],
+    "en": ["*blub*", "*blub blub*"]
+  }
+}

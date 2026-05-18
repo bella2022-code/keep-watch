@@ -1,0 +1,43 @@
+{
+  "character": "astronaut",
+  "messages": {
+    "zh": [
+      { "id": "astro_a_1", "group": "A", "text": "從這裡看，你發光了", "condition": "general" },
+      { "id": "astro_a_2", "group": "A", "text": "完美對接", "condition": "general" },
+      { "id": "astro_a_3", "group": "A", "text": "任務達成", "condition": "general" },
+      { "id": "astro_a_4", "group": "A", "text": "軌道穩定", "condition": "short_session" },
+      { "id": "astro_a_5", "group": "A", "text": "一圈又一圈，你做到了", "condition": "long_session" },
+      { "id": "astro_b_6", "group": "B", "text": "返航時間到了", "condition": "general" },
+      { "id": "astro_b_7", "group": "B", "text": "引擎關機", "condition": "general" },
+      { "id": "astro_b_8", "group": "B", "text": "該回艙了", "condition": "general" },
+      { "id": "astro_b_9", "group": "B", "text": "通訊結束，晚安", "condition": "general" },
+      { "id": "astro_b_10", "group": "B", "text": "下個軌道見", "condition": "general" },
+      { "id": "astro_c_11", "group": "C", "text": "太空裡沒有快慢", "condition": "general" },
+      { "id": "astro_c_12", "group": "C", "text": "飄一下也行", "condition": "general" },
+      { "id": "astro_c_13", "group": "C", "text": "安靜的人，最像星星", "condition": "general" },
+      { "id": "astro_c_14", "group": "C", "text": "又一次信號，收到", "condition": "cumulative_5_days" },
+      { "id": "astro_c_15", "group": "C", "text": "地球還在轉，沒事", "condition": "general" }
+    ],
+    "en": [
+      { "id": "astro_a_1", "group": "A", "text": "From here, you glow.", "condition": "general" },
+      { "id": "astro_a_2", "group": "A", "text": "Perfect docking.", "condition": "general" },
+      { "id": "astro_a_3", "group": "A", "text": "Mission complete.", "condition": "general" },
+      { "id": "astro_a_4", "group": "A", "text": "Orbit stable.", "condition": "short_session" },
+      { "id": "astro_a_5", "group": "A", "text": "Loop after loop. You made it.", "condition": "long_session" },
+      { "id": "astro_b_6", "group": "B", "text": "Time to return.", "condition": "general" },
+      { "id": "astro_b_7", "group": "B", "text": "Engines off.", "condition": "general" },
+      { "id": "astro_b_8", "group": "B", "text": "Back to the cabin.", "condition": "general" },
+      { "id": "astro_b_9", "group": "B", "text": "Signing off. Good night.", "condition": "general" },
+      { "id": "astro_b_10", "group": "B", "text": "See you next orbit.", "condition": "general" },
+      { "id": "astro_c_11", "group": "C", "text": "No fast or slow in space.", "condition": "general" },
+      { "id": "astro_c_12", "group": "C", "text": "Drifting is okay.", "condition": "general" },
+      { "id": "astro_c_13", "group": "C", "text": "Quiet folks. Like stars.", "condition": "general" },
+      { "id": "astro_c_14", "group": "C", "text": "Signal again. Received.", "condition": "cumulative_5_days" },
+      { "id": "astro_c_15", "group": "C", "text": "Earth still turns. We're fine.", "condition": "general" }
+    ]
+  },
+  "suffixes": {
+    "zh": ["*...*", "*完畢*"],
+    "en": ["*...*", "*over*"]
+  }
+}

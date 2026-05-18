@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SessionHistory",
+  "description": "Append-only log of every completed focus session",
+  "type": "object",
+  "example": {
+    "sessions": [
+      {
+        "id": "uuid-1234",
+        "started_at": "2026-05-16T08:00:00Z",
+        "completed_at": "2026-05-16T08:25:00Z",
+        "duration_seconds": 1500,
+        "mode": "timer",
+        "scene": "mouse_cage",
+        "card_message_id": "mouse_a_1",
+        "card_suffix": null,
+        "interrupted": false
+      }
+    ]
+  },
+  "properties": {
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "UUID v4" },
+          "started_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time" },
+          "duration_seconds": { "type": "integer", "minimum": 0 },
+          "mode": { "type": "string", "enum": ["timer", "pomodoro"] },
+          "scene": { "type": "string", "enum": ["mouse_cage", "fish_tank", "astronaut_space", "officer_room"] },
+          "card_message_id": { "type": "string", "description": "Reference to card_pool_*.json" },
+          "card_suffix": { "type": ["string", "null"] },
+          "interrupted": { "type": "boolean", "description": "True if user canceled before completion" }
+        }
+      }
+    }
+  }
+}

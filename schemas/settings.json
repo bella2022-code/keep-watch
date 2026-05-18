@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Settings",
+  "description": "User preferences for Keep Watch",
+  "type": "object",
+  "example": {
+    "language": "zh",
+    "theme": "warm_wood",
+    "background_mode": "auto",
+    "background_override": null,
+    "volume": 60,
+    "muted": false,
+    "last_timer_minutes": 25,
+    "last_pomodoro_work": 25,
+    "last_pomodoro_rest": 5,
+    "last_pomodoro_cycles": 4
+  },
+  "properties": {
+    "language": { "type": "string", "enum": ["zh", "en"] },
+    "theme": { "type": "string", "enum": ["warm_wood", "cool_mist", "sepia_quiet"] },
+    "background_mode": { "type": "string", "enum": ["auto", "manual"], "description": "auto = follow system time" },
+    "background_override": {
+      "type": ["string", "null"],
+      "enum": ["morning", "day", "dusk", "night", "deep_night", null]
+    },
+    "volume": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "muted": { "type": "boolean" },
+    "last_timer_minutes": { "type": "integer", "minimum": 5, "maximum": 180 },
+    "last_pomodoro_work": { "type": "integer", "enum": [15, 25, 30, 45, 50] },
+    "last_pomodoro_rest": { "type": "integer", "enum": [5, 10, 15] },
+    "last_pomodoro_cycles": { "type": "integer", "minimum": 1, "maximum": 8 }
+  }
+}

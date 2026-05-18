@@ -1,0 +1,107 @@
+{
+  "milestones": [
+    {
+      "id": "10hr",
+      "trigger": "total_focus_seconds >= 36000",
+      "messages": {
+        "mouse": {
+          "zh": "十小時了！我記得",
+          "en": "Ten hours! I remember."
+        },
+        "goldfish": {
+          "zh": "十小時的水紋",
+          "en": "Ten hours of ripples."
+        },
+        "astronaut": {
+          "zh": "第一個 10 軌道",
+          "en": "First 10 orbits."
+        },
+        "officer": {
+          "zh": "第一個 10 小時，記住這個感覺",
+          "en": "First 10 hours. Remember this."
+        }
+      }
+    },
+    {
+      "id": "50hr",
+      "trigger": "total_focus_seconds >= 180000",
+      "messages": {
+        "mouse": { "zh": "五十！哇！", "en": "Fifty! Wow!" },
+        "goldfish": { "zh": "水深了", "en": "The water's deeper." },
+        "astronaut": { "zh": "50 軌道穩定", "en": "50 orbits, stable." },
+        "officer": {
+          "zh": "50 小時了，你比你想的還能撐",
+          "en": "50 hours in. Tougher than you think."
+        }
+      }
+    },
+    {
+      "id": "100hr",
+      "trigger": "total_focus_seconds >= 360000",
+      "messages": {
+        "mouse": { "zh": "一百耶！厲害厲害", "en": "A hundred! So cool!" },
+        "goldfish": {
+          "zh": "一百小時都在這裡",
+          "en": "A hundred hours, all here."
+        },
+        "astronaut": { "zh": "100 軌道，完美", "en": "100 orbits. Beautiful." },
+        "officer": {
+          "zh": "恭喜你 專注時間到 100 小時囉",
+          "en": "Congrats. 100 hours of focus."
+        }
+      }
+    },
+    {
+      "id": "500hr",
+      "trigger": "total_focus_seconds >= 1800000",
+      "messages": {
+        "mouse": { "zh": "五百！！！我數不完了", "en": "500!!! I lost count." },
+        "goldfish": {
+          "zh": "五百小時，海也認得你",
+          "en": "500 hours. The sea knows you."
+        },
+        "astronaut": {
+          "zh": "500 軌道。地球也老了一點",
+          "en": "500 orbits. Earth aged a bit."
+        },
+        "officer": {
+          "zh": "500 小時。我都記得",
+          "en": "500 hours. I remember all of them."
+        }
+      }
+    },
+    {
+      "id": "cumulative_14d",
+      "trigger": "total_focus_days >= 14",
+      "messages": {
+        "mouse": { "zh": "一週多了，沒躲了", "en": "Past a week. No hiding." },
+        "goldfish": { "zh": "十四圈水流", "en": "Fourteen currents." },
+        "astronaut": { "zh": "14 軌道穩了", "en": "14 orbits steady." },
+        "officer": {
+          "zh": "第十四天，這是節奏了",
+          "en": "Fourteen days. It's a rhythm now."
+        }
+      },
+      "note": "Also triggers Officer unlock if not already unlocked"
+    },
+    {
+      "id": "cumulative_50d",
+      "trigger": "total_focus_days >= 50",
+      "messages": {
+        "mouse": {
+          "zh": "一個月了，鼠都認得你了",
+          "en": "A month. Mouse knows you now."
+        },
+        "goldfish": {
+          "zh": "五十次漣漪都記得",
+          "en": "Fifty ripples remembered."
+        },
+        "astronaut": { "zh": "50 軌道完成", "en": "50 orbits complete." },
+        "officer": {
+          "zh": "五十天，你的形狀變了",
+          "en": "Fifty days. You've taken shape."
+        }
+      }
+    }
+  ]
+}
