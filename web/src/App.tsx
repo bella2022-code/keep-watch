@@ -6,21 +6,38 @@ import {
   NATIVE_WIDTH,
   NATIVE_HEIGHT,
 } from './core/canvas';
-import { drawMouseCage } from './scenes/MouseCage';
-import { drawMouse, drawHalo, type MouseState } from './characters/Mouse';
-import { drawCard, drawFocusModeClock, getCardRect } from './characters/Card';
+import { drawMouseCage, drawWheel, drawBowl } from './scenes/MouseCage';
+import {
+  drawMouse,
+  drawMouseWalking,
+  drawMouseWaving,
+  drawHalo,
+  type MouseState,
+} from './characters/Mouse';
+import {
+  drawCard,
+  drawCompletionCard,
+  drawFocusModeClock,
+  getCardRect,
+} from './characters/Card';
 import { drawBubble } from './characters/Bubble';
-import { tickCompanions, drawCompanions } from './characters/MouseCompanion';
+import { tickCompanions, drawCompanions, isWheelInUse } from './characters/MouseCompanion';
 import { useTimerStore } from './store/timerStore';
+import { useHintsStore } from './store/hintsStore';
+import { pickMouseMessage, type CardMessage } from './store/messages';
+import {
+  COMPLETION_TOTAL_MS,
+  getCompletionPhase,
+  getMouseX,
+  getMouseWalkFrame,
+} from './core/completionSequence';
+import { playCompletionSound } from './core/sound';
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const startTimeRef = useRef<number>(performance.now());
   const rafRef = useRef<number>(0);
-
-  /** Manual scale override. 0 means "auto" (default). */
   const manualScaleRef = useRef<number>(0);
-  /** Display indicator: shows current scale briefly when changed. */
   const [scaleToast, setScaleToast] = useState<{ value: number; until: number } | null>(null);
 
   const mouseStateRef = useRef<MouseState>({
@@ -29,20 +46,20 @@ function App() {
   });
   const cardStateRef = useRef({
     centerX: Math.floor(NATIVE_WIDTH / 2),
-    centerY: 232 - 38,
+    centerY: 232 - 50,
   });
+
+  // Completion sequence state
+  const completionDirRef = useRef<1 | -1>(1);
+  const completionMessageRef = useRef<CardMessage | null>(null);
+  const completionSoundPlayedRef = useRef<boolean>(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const { ctx } = setupPixelCanvas(canvas);
-
-    const applyScale = () => {
-      const scale = resizeCanvas(canvas, manualScaleRef.current || undefined);
-      return scale;
-    };
-
+    const applyScale = () => resizeCanvas(canvas, manualScaleRef.current || undefined);
     let currentScale = applyScale();
 
     const showScaleToast = (s: number) => {
@@ -69,7 +86,7 @@ function App() {
 
     function hitMouse(cx: number, cy: number) {
       const m = mouseStateRef.current;
-      return cx >= m.x - 14 && cx <= m.x + 14 && cy >= m.y - 20 && cy <= m.y + 4;
+      return cx >= m.x - 18 && cx <= m.x + 18 && cy >= m.y - 28 && cy <= m.y + 4;
     }
 
     const onWheel = (e: WheelEvent) => {
@@ -78,6 +95,7 @@ function App() {
       e.preventDefault();
       const direction = e.deltaY < 0 ? 1 : -1;
       useTimerStore.getState().adjustMinutes(direction);
+      useHintsStore.getState().dismissTimeHint();
     };
 
     const onClick = (e: MouseEvent) => {
@@ -85,32 +103,22 @@ function App() {
       const phase = useTimerStore.getState().phase;
       if (phase === 'idle' && hitMouse(cx, cy)) {
         useTimerStore.getState().start();
+        useHintsStore.getState().dismissStartHint();
       } else if (phase === 'focusing') {
         useTimerStore.getState().cancel();
       }
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      // Zoom controls — check e.code (keyboard position) and e.key (character)
-      // to be robust against IME / different layouts.
       const isPlus =
-        e.key === '+' ||
-        e.key === '=' ||
-        e.code === 'Equal' ||
-        e.code === 'NumpadAdd';
+        e.key === '+' || e.key === '=' || e.code === 'Equal' || e.code === 'NumpadAdd';
       const isMinus =
-        e.key === '-' ||
-        e.key === '_' ||
-        e.code === 'Minus' ||
-        e.code === 'NumpadSubtract';
-      const isZero =
-        e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0';
+        e.key === '-' || e.key === '_' || e.code === 'Minus' || e.code === 'NumpadSubtract';
+      const isZero = e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0';
 
       if (isPlus) {
         e.preventDefault();
-        const base =
-          manualScaleRef.current ||
-          calcIntegerScale(window.innerWidth, window.innerHeight);
+        const base = manualScaleRef.current || calcIntegerScale(window.innerWidth, window.innerHeight);
         manualScaleRef.current = base + 0.25;
         currentScale = applyScale();
         showScaleToast(currentScale);
@@ -118,9 +126,7 @@ function App() {
       }
       if (isMinus) {
         e.preventDefault();
-        const base =
-          manualScaleRef.current ||
-          calcIntegerScale(window.innerWidth, window.innerHeight);
+        const base = manualScaleRef.current || calcIntegerScale(window.innerWidth, window.innerHeight);
         manualScaleRef.current = Math.max(0.25, base - 0.25);
         currentScale = applyScale();
         showScaleToast(currentScale);
@@ -134,18 +140,20 @@ function App() {
         return;
       }
 
-      // Timer controls
       const phase = useTimerStore.getState().phase;
       if (phase === 'idle') {
         if (e.key === 'ArrowUp') {
           e.preventDefault();
           useTimerStore.getState().adjustMinutes(1);
+          useHintsStore.getState().dismissTimeHint();
         } else if (e.key === 'ArrowDown') {
           e.preventDefault();
           useTimerStore.getState().adjustMinutes(-1);
+          useHintsStore.getState().dismissTimeHint();
         } else if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           useTimerStore.getState().start();
+          useHintsStore.getState().dismissStartHint();
         }
       } else if (phase === 'focusing') {
         if (e.key === 'Escape') {
@@ -166,37 +174,49 @@ function App() {
       useTimerStore.getState().tick(now);
       tickCompanions(now);
 
-      const { phase, setMinutes, remainingMs } = useTimerStore.getState();
+      const { phase, setMinutes, remainingMs, sessionTotalMs, completionStartedAt } = useTimerStore.getState();
 
+      // 1. Background + scene props (bowl, wheel) + companions
       drawMouseCage(ctx);
+      drawBowl(ctx);
+      drawWheel(ctx, now, isWheelInUse());
       drawCompanions(ctx);
 
       if (phase === 'idle') {
+        // Reset completion state when we go back to idle
+        completionMessageRef.current = null;
+        completionSoundPlayedRef.current = false;
+
         drawHalo(ctx, mouseStateRef.current, t);
         drawMouse(ctx, mouseStateRef.current, t);
         drawCard(ctx, cardStateRef.current, setMinutes);
 
         const hintAlpha = Math.min(1, Math.max(0, (t - 2000) / 800));
+        const { timeHintDismissed, startHintDismissed } = useHintsStore.getState();
         if (hintAlpha > 0) {
-          const cardRect = getCardRect(cardStateRef.current);
-          drawBubble(ctx, 'scroll or arrows', {
-            anchorX: cardRect.x + cardRect.w / 2,
-            anchorY: cardRect.y,
-            side: 'above',
-            alpha: hintAlpha * 0.85,
-          });
-          drawBubble(ctx, 'tap or enter', {
-            anchorX: mouseStateRef.current.x + 14,
-            anchorY: mouseStateRef.current.y - 10,
-            side: 'right',
-            alpha: hintAlpha * 0.85,
-          });
+          if (!timeHintDismissed) {
+            const cardRect = getCardRect(cardStateRef.current);
+            drawBubble(ctx, 'scroll or arrows', {
+              anchorX: cardRect.x + cardRect.w / 2,
+              anchorY: cardRect.y,
+              side: 'above',
+              alpha: hintAlpha * 0.85,
+            });
+          }
+          if (!startHintDismissed) {
+            drawBubble(ctx, 'tap or enter', {
+              anchorX: mouseStateRef.current.x + 20,
+              anchorY: mouseStateRef.current.y - 12,
+              side: 'right',
+              alpha: hintAlpha * 0.85,
+            });
+          }
         }
       } else if (phase === 'focusing') {
-        const totalMs = setMinutes * 60 * 1000;
-        drawFocusModeClock(ctx, remainingMs, totalMs);
+        drawFocusModeClock(ctx, remainingMs, sessionTotalMs);
 
-        const hintAlpha = Math.max(0, 1 - t / 4000);
+        const focusElapsed = now - useTimerStore.getState().startedAt;
+        const hintAlpha = Math.max(0, 1 - focusElapsed / 4000);
         if (hintAlpha > 0.1) {
           drawBubble(ctx, 'esc to cancel', {
             anchorX: NATIVE_WIDTH - 60,
@@ -206,7 +226,79 @@ function App() {
           });
         }
       } else if (phase === 'completing') {
-        drawFocusModeClock(ctx, 0, setMinutes * 60 * 1000);
+        // Initialize completion sequence on first frame
+        if (completionMessageRef.current === null) {
+          completionMessageRef.current = pickMouseMessage(setMinutes);
+          completionDirRef.current = Math.random() < 0.5 ? 1 : -1;
+        }
+
+        const elapsed = now - completionStartedAt;
+        const { phase: cPhase, progress } = getCompletionPhase(elapsed);
+        const dir = completionDirRef.current;
+
+        const mouseX = getMouseX(
+          Math.floor(NATIVE_WIDTH / 2),
+          dir,
+          cPhase,
+          progress
+        );
+        const mouseState: MouseState = { x: mouseX, y: 232 };
+
+        // Fade out focus UI
+        if (cPhase === 'fadeout') {
+          ctx.globalAlpha = 1 - progress;
+          drawFocusModeClock(ctx, 0, sessionTotalMs || 1);
+          ctx.globalAlpha = 1;
+        }
+
+        // Walking in/out: animated walk frames
+        if (cPhase === 'walking-in' || cPhase === 'walking-out') {
+          const walkFrame = getMouseWalkFrame(cPhase, elapsed);
+          const facingRight = cPhase === 'walking-in' ? dir === 1 : dir === 1;
+          drawMouseWalking(ctx, mouseState, walkFrame, facingRight);
+        } else if (cPhase === 'pause-before-card') {
+          drawMouse(ctx, mouseState, t);
+        } else if (cPhase === 'card-rising') {
+          drawMouse(ctx, mouseState, t);
+          // Card rises with eased scale
+          const eased = 1 - Math.pow(1 - progress, 2);
+          drawCompletionCard(
+            ctx,
+            { centerX: mouseX, centerY: 232 - 40 },
+            completionMessageRef.current?.text ?? '',
+            { scale: eased, alpha: eased }
+          );
+          // Play sound at the start of rising
+          if (!completionSoundPlayedRef.current) {
+            completionSoundPlayedRef.current = true;
+            playCompletionSound();
+          }
+        } else if (cPhase === 'card-displayed') {
+          drawMouse(ctx, mouseState, t);
+          drawCompletionCard(
+            ctx,
+            { centerX: mouseX, centerY: 232 - 40 },
+            completionMessageRef.current?.text ?? '',
+            { scale: 1, alpha: 1 }
+          );
+        } else if (cPhase === 'card-lowering-wave') {
+          // Card fades out as Mouse waves
+          const cardAlpha = 1 - progress;
+          drawCompletionCard(
+            ctx,
+            { centerX: mouseX, centerY: 232 - 40 },
+            completionMessageRef.current?.text ?? '',
+            { scale: 1, alpha: cardAlpha }
+          );
+          drawMouseWaving(ctx, mouseState, elapsed * 1000);
+        } else if (cPhase === 'empty') {
+          // Scene is empty
+        }
+
+        // Auto-return to idle when sequence completes
+        if (elapsed >= COMPLETION_TOTAL_MS) {
+          useTimerStore.getState().complete();
+        }
       }
 
       rafRef.current = requestAnimationFrame(render);
@@ -222,7 +314,6 @@ function App() {
     };
   }, []);
 
-  // Hide toast after expiry
   useEffect(() => {
     if (!scaleToast) return;
     const remaining = scaleToast.until - performance.now();
@@ -237,10 +328,8 @@ function App() {
   const zoomIn = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const base =
-      manualScaleRef.current ||
-      calcIntegerScale(window.innerWidth, window.innerHeight);
-    manualScaleRef.current = base + 1;
+    const base = manualScaleRef.current || calcIntegerScale(window.innerWidth, window.innerHeight);
+    manualScaleRef.current = base + 0.25;
     const s = resizeCanvas(canvas, manualScaleRef.current || undefined);
     setScaleToast({ value: s, until: performance.now() + 1500 });
   };
@@ -248,10 +337,8 @@ function App() {
   const zoomOut = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const base =
-      manualScaleRef.current ||
-      calcIntegerScale(window.innerWidth, window.innerHeight);
-    manualScaleRef.current = Math.max(1, base - 1);
+    const base = manualScaleRef.current || calcIntegerScale(window.innerWidth, window.innerHeight);
+    manualScaleRef.current = Math.max(0.25, base - 0.25);
     const s = resizeCanvas(canvas, manualScaleRef.current || undefined);
     setScaleToast({ value: s, until: performance.now() + 1500 });
   };
@@ -276,8 +363,6 @@ function App() {
           {scaleToast.value}× {manualScaleRef.current === 0 ? '(auto)' : '(manual)'}
         </div>
       )}
-
-      {/* Zoom buttons — always visible, click-friendly fallback */}
       <div className="absolute bottom-3 right-3 flex gap-1 font-mono text-sm">
         <button
           onClick={zoomOut}
@@ -301,10 +386,20 @@ function App() {
           +
         </button>
       </div>
-
       <div className="absolute bottom-2 left-2 text-kw-white/30 text-[10px] font-mono pointer-events-none select-none">
         + / − zoom · 0 reset
       </div>
+
+      {/* Debug-only: trigger a quick 6-second test session */}
+      {import.meta.env.DEV && (
+        <button
+          onClick={() => useTimerStore.getState().startDebug(6)}
+          className="absolute top-4 left-4 px-3 py-1 bg-kw-pink/40 text-kw-white text-xs font-mono rounded border border-kw-pink/60 hover:bg-kw-pink/60"
+          aria-label="Debug: start 6-second test"
+        >
+          ▶ 6s test
+        </button>
+      )}
     </div>
   );
 }

@@ -83,6 +83,70 @@ export function drawCard(
 }
 
 /**
+ * Draws a completion card with arbitrary text instead of a time value.
+ * Used during the completion sequence — the Mouse holds this card up
+ * with an encouragement message on it.
+ *
+ * `scale` lets the card grow during the "rising" animation.
+ * `alpha` lets it fade in/out.
+ */
+export function drawCompletionCard(
+  ctx: CanvasRenderingContext2D,
+  state: CardState,
+  text: string,
+  opts: { scale?: number; alpha?: number } = {}
+) {
+  const scale = opts.scale ?? 1;
+  const alpha = opts.alpha ?? 1;
+
+  // Card dimensions sized to fit the text
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = '8px monospace';
+  ctx.textBaseline = 'middle';
+  const metrics = ctx.measureText(text);
+  const padX = 8;
+  const padY = 6;
+  const w = Math.max(60, Math.ceil(metrics.width) + padX * 2);
+  const h = 18;
+
+  const drawnW = Math.round(w * scale);
+  const drawnH = Math.round(h * scale);
+  const x = Math.round(state.centerX - drawnW / 2);
+  const y = Math.round(state.centerY - drawnH / 2);
+
+  // Card body — warm wood
+  ctx.fillStyle = '#A89478';
+  ctx.fillRect(x, y, drawnW, drawnH);
+  // Wood grain
+  ctx.fillStyle = '#8B7858';
+  ctx.fillRect(x, y + Math.round(5 * scale), drawnW, 1);
+  ctx.fillRect(x, y + drawnH - Math.round(5 * scale), drawnW, 1);
+
+  // Border
+  ctx.fillStyle = COLORS.black;
+  ctx.fillRect(x, y, drawnW, 1);
+  ctx.fillRect(x, y + drawnH - 1, drawnW, 1);
+  ctx.fillRect(x, y, 1, drawnH);
+  ctx.fillRect(x + drawnW - 1, y, 1, drawnH);
+
+  // Hanging strings (visible only when scale >= 1)
+  if (scale >= 0.95) {
+    ctx.fillStyle = 'rgba(42, 33, 40, 0.6)';
+    ctx.fillRect(x + 8, y - 4, 1, 4);
+    ctx.fillRect(x + drawnW - 9, y - 4, 1, 4);
+  }
+
+  // Text (only when card has popped out enough to be readable)
+  if (scale >= 0.5) {
+    ctx.fillStyle = COLORS.black;
+    ctx.textAlign = 'center';
+    ctx.fillText(text, x + drawnW / 2, y + drawnH / 2 + 1);
+  }
+  ctx.restore();
+}
+
+/**
  * Draws the running time during Focus Mode as a remaining MM:SS clock
  * in the bottom-left corner of the canvas, with a soft progress bar
  * underneath. See spec docs/03-ui-layout.md §3.5

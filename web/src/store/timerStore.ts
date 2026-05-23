@@ -2,10 +2,11 @@
  * Timer state store · Zustand
  *
  * Manages the focus session lifecycle:
- *   idle (setting time) → focusing → idle (after completion)
+ *   idle (setting time) → focusing → completing → idle
  *
- * Time is stored in minutes for the setup card,
- * and in seconds when actively counting down.
+ * `setMinutes` is the picker value (shown on the card while idle).
+ * `sessionTotalMs` is the actual session length used during focus
+ *   (normally = setMinutes * 60 * 1000, but debug sessions override).
  */
 
 import { create } from 'zustand';
@@ -14,13 +15,15 @@ export type Phase = 'idle' | 'focusing' | 'completing';
 
 interface TimerState {
   phase: Phase;
-  setMinutes: number; // What's shown on the card (5 to 180 in steps of 5)
-  remainingMs: number; // Time remaining when focusing
-  startedAt: number; // performance.now() when focus started
+  setMinutes: number;
+  sessionTotalMs: number;
+  remainingMs: number;
+  startedAt: number;
+  completionStartedAt: number;
 
-  // Actions
   adjustMinutes: (delta: number) => void;
   start: () => void;
+  startDebug: (seconds: number) => void;
   tick: (now: number) => void;
   complete: () => void;
   cancel: () => void;
@@ -33,8 +36,10 @@ const STEP_MINUTES = 5;
 export const useTimerStore = create<TimerState>((set, get) => ({
   phase: 'idle',
   setMinutes: 25,
+  sessionTotalMs: 0,
   remainingMs: 0,
   startedAt: 0,
+  completionStartedAt: 0,
 
   adjustMinutes: (delta) => {
     if (get().phase !== 'idle') return;
@@ -48,28 +53,40 @@ export const useTimerStore = create<TimerState>((set, get) => ({
     const ms = get().setMinutes * 60 * 1000;
     set({
       phase: 'focusing',
+      sessionTotalMs: ms,
+      remainingMs: ms,
+      startedAt: performance.now(),
+    });
+  },
+
+  /** Debug-only: start a short test session bypassing the picker. */
+  startDebug: (seconds) => {
+    if (get().phase !== 'idle') return;
+    const ms = seconds * 1000;
+    set({
+      phase: 'focusing',
+      sessionTotalMs: ms,
       remainingMs: ms,
       startedAt: performance.now(),
     });
   },
 
   tick: (now) => {
-    const { phase, startedAt, setMinutes } = get();
+    const { phase, startedAt, sessionTotalMs } = get();
     if (phase !== 'focusing') return;
-    const totalMs = setMinutes * 60 * 1000;
     const elapsed = now - startedAt;
-    const remaining = Math.max(0, totalMs - elapsed);
+    const remaining = Math.max(0, sessionTotalMs - elapsed);
     set({ remainingMs: remaining });
     if (remaining === 0) {
-      set({ phase: 'completing' });
+      set({ phase: 'completing', completionStartedAt: now });
     }
   },
 
   complete: () => {
-    set({ phase: 'idle', remainingMs: 0 });
+    set({ phase: 'idle', remainingMs: 0, completionStartedAt: 0, sessionTotalMs: 0 });
   },
 
   cancel: () => {
-    set({ phase: 'idle', remainingMs: 0 });
+    set({ phase: 'idle', remainingMs: 0, completionStartedAt: 0, sessionTotalMs: 0 });
   },
 }));
