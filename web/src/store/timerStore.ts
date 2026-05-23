@@ -1,17 +1,20 @@
 /**
  * Timer state store · Zustand
  *
- * Manages the focus session lifecycle:
- *   idle (setting time) → focusing → completing → idle
+ * idle → focusing → completing → (revealing) → idle
  *
- * `setMinutes` is the picker value (shown on the card while idle).
- * `sessionTotalMs` is the actual session length used during focus
- *   (normally = setMinutes * 60 * 1000, but debug sessions override).
+ * On every transition out of focusing (either via timeout or cancel),
+ * records the elapsed focus time to userStateStore.
+ *
+ * When a completion would unlock a character for the first time,
+ * the orchestrator transitions into 'revealing' instead of 'idle'.
  */
 
 import { create } from 'zustand';
+import { useUserStateStore } from './userStateStore';
 
-export type Phase = 'idle' | 'focusing' | 'completing';
+export type Phase = 'idle' | 'focusing' | 'completing' | 'revealing';
+export type RevealCharacter = 'goldfish' | 'astronaut' | 'officer';
 
 interface TimerState {
   phase: Phase;
@@ -20,6 +23,8 @@ interface TimerState {
   remainingMs: number;
   startedAt: number;
   completionStartedAt: number;
+  revealStartedAt: number;
+  revealCharacter: RevealCharacter | null;
 
   adjustMinutes: (delta: number) => void;
   start: () => void;
@@ -27,6 +32,8 @@ interface TimerState {
   tick: (now: number) => void;
   complete: () => void;
   cancel: () => void;
+  startReveal: (character: RevealCharacter) => void;
+  finishReveal: () => void;
 }
 
 const MIN_MINUTES = 5;
@@ -40,6 +47,8 @@ export const useTimerStore = create<TimerState>((set, get) => ({
   remainingMs: 0,
   startedAt: 0,
   completionStartedAt: 0,
+  revealStartedAt: 0,
+  revealCharacter: null,
 
   adjustMinutes: (delta) => {
     if (get().phase !== 'idle') return;
@@ -59,7 +68,6 @@ export const useTimerStore = create<TimerState>((set, get) => ({
     });
   },
 
-  /** Debug-only: start a short test session bypassing the picker. */
   startDebug: (seconds) => {
     if (get().phase !== 'idle') return;
     const ms = seconds * 1000;
@@ -78,15 +86,69 @@ export const useTimerStore = create<TimerState>((set, get) => ({
     const remaining = Math.max(0, sessionTotalMs - elapsed);
     set({ remainingMs: remaining });
     if (remaining === 0) {
+      const durationSec = sessionTotalMs / 1000;
+      useUserStateStore.getState().recordSession(durationSec, true, 'timer');
       set({ phase: 'completing', completionStartedAt: now });
     }
   },
 
   complete: () => {
+    // Check if this completion just unlocked Goldfish
+    const userState = useUserStateStore.getState();
+    if (
+      userState.completions.timer_count >= 1 &&
+      !userState.unlocks.goldfish.unlocked
+    ) {
+      // Transition straight into the Goldfish reveal cinematic
+      set({
+        phase: 'revealing',
+        revealStartedAt: performance.now(),
+        revealCharacter: 'goldfish',
+        remainingMs: 0,
+        completionStartedAt: 0,
+        sessionTotalMs: 0,
+      });
+      return;
+    }
     set({ phase: 'idle', remainingMs: 0, completionStartedAt: 0, sessionTotalMs: 0 });
   },
 
   cancel: () => {
-    set({ phase: 'idle', remainingMs: 0, completionStartedAt: 0, sessionTotalMs: 0 });
+    const { phase, startedAt } = get();
+    if (phase === 'focusing') {
+      const elapsedSec = (performance.now() - startedAt) / 1000;
+      useUserStateStore.getState().recordSession(elapsedSec, false, 'timer');
+    }
+    set({
+      phase: 'idle',
+      remainingMs: 0,
+      completionStartedAt: 0,
+      sessionTotalMs: 0,
+      revealStartedAt: 0,
+      revealCharacter: null,
+    });
+  },
+
+  startReveal: (character) => {
+    set({
+      phase: 'revealing',
+      revealStartedAt: performance.now(),
+      revealCharacter: character,
+      remainingMs: 0,
+      completionStartedAt: 0,
+      sessionTotalMs: 0,
+    });
+  },
+
+  finishReveal: () => {
+    const { revealCharacter } = get();
+    if (revealCharacter) {
+      useUserStateStore.getState().unlockCharacter(revealCharacter);
+    }
+    set({
+      phase: 'idle',
+      revealStartedAt: 0,
+      revealCharacter: null,
+    });
   },
 }));

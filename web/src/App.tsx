@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   setupPixelCanvas,
   resizeCanvas,
-  calcIntegerScale,
+  getAutoScale,
   NATIVE_WIDTH,
   NATIVE_HEIGHT,
 } from './core/canvas';
@@ -24,6 +24,7 @@ import { drawBubble } from './characters/Bubble';
 import { tickCompanions, drawCompanions, isWheelInUse } from './characters/MouseCompanion';
 import { useTimerStore } from './store/timerStore';
 import { useHintsStore } from './store/hintsStore';
+import { useUserStateStore, formatHM } from './store/userStateStore';
 import { pickMouseMessage, type CardMessage } from './store/messages';
 import {
   COMPLETION_TOTAL_MS,
@@ -31,7 +32,19 @@ import {
   getMouseX,
   getMouseWalkFrame,
 } from './core/completionSequence';
-import { playCompletionSound } from './core/sound';
+import { REVEAL_TOTAL_MS, getRevealPhase } from './core/revealSequence';
+import {
+  drawFishTank,
+  drawFishTankSilhouette,
+  drawFishTankRevealFill,
+} from './scenes/FishTank';
+import {
+  drawGoldfishSwimming,
+  drawGoldfishIdle,
+  drawGoldfishFacingCamera,
+  type GoldfishState,
+} from './characters/Goldfish';
+import { playCompletionSound, playClack } from './core/sound';
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -39,6 +52,11 @@ function App() {
   const rafRef = useRef<number>(0);
   const manualScaleRef = useRef<number>(0);
   const [scaleToast, setScaleToast] = useState<{ value: number; until: number } | null>(null);
+
+  // Reactive subscriptions for the stats overlay
+  const todaySec = useUserStateStore((s) => s.today.seconds);
+  const totalSec = useUserStateStore((s) => s.total_focus_seconds);
+  const totalDays = useUserStateStore((s) => s.total_focus_days);
 
   const mouseStateRef = useRef<MouseState>({
     x: Math.floor(NATIVE_WIDTH / 2),
@@ -118,7 +136,7 @@ function App() {
 
       if (isPlus) {
         e.preventDefault();
-        const base = manualScaleRef.current || calcIntegerScale(window.innerWidth, window.innerHeight);
+        const base = manualScaleRef.current || getAutoScale();
         manualScaleRef.current = base + 0.25;
         currentScale = applyScale();
         showScaleToast(currentScale);
@@ -126,7 +144,7 @@ function App() {
       }
       if (isMinus) {
         e.preventDefault();
-        const base = manualScaleRef.current || calcIntegerScale(window.innerWidth, window.innerHeight);
+        const base = manualScaleRef.current || getAutoScale();
         manualScaleRef.current = Math.max(0.25, base - 0.25);
         currentScale = applyScale();
         showScaleToast(currentScale);
@@ -174,13 +192,23 @@ function App() {
       useTimerStore.getState().tick(now);
       tickCompanions(now);
 
-      const { phase, setMinutes, remainingMs, sessionTotalMs, completionStartedAt } = useTimerStore.getState();
+      const {
+        phase,
+        setMinutes,
+        remainingMs,
+        sessionTotalMs,
+        completionStartedAt,
+        revealStartedAt,
+        revealCharacter,
+      } = useTimerStore.getState();
 
-      // 1. Background + scene props (bowl, wheel) + companions
-      drawMouseCage(ctx);
-      drawBowl(ctx);
-      drawWheel(ctx, now, isWheelInUse());
-      drawCompanions(ctx);
+      // Background + scene props for non-reveal phases only
+      if (phase !== 'revealing') {
+        drawMouseCage(ctx);
+        drawBowl(ctx);
+        drawWheel(ctx, now, isWheelInUse());
+        drawCompanions(ctx);
+      }
 
       if (phase === 'idle') {
         // Reset completion state when we go back to idle
@@ -299,7 +327,137 @@ function App() {
         if (elapsed >= COMPLETION_TOTAL_MS) {
           useTimerStore.getState().complete();
         }
+      } else if (phase === 'revealing') {
+        // Reset completion state when entering reveal
+        completionMessageRef.current = null;
+        completionSoundPlayedRef.current = false;
+
+        const elapsed = now - revealStartedAt;
+        const { phase: rPhase, progress } = getRevealPhase(elapsed);
+
+        // Goldfish swims in from random side
+        const goldfishDir: 1 | -1 = 1;
+        const targetX = Math.floor(NATIVE_WIDTH / 2);
+        const startX = goldfishDir === 1 ? -20 : NATIVE_WIDTH + 20;
+        const goldfishY = 140;
+
+        if (rPhase === 'fade-out') {
+          // Mouse Cage fading to black
+          drawMouseCage(ctx);
+          drawBowl(ctx);
+          drawWheel(ctx, now, false);
+          drawCompanions(ctx);
+          ctx.fillStyle = `rgba(21, 22, 30, ${progress})`;
+          ctx.fillRect(0, 0, NATIVE_WIDTH, NATIVE_HEIGHT);
+        } else if (rPhase === 'silhouette') {
+          // Fish Tank silhouette fades in
+          ctx.fillStyle = '#15161E';
+          ctx.fillRect(0, 0, NATIVE_WIDTH, NATIVE_HEIGHT);
+          drawFishTankSilhouette(ctx, progress);
+        } else if (rPhase === 'goldfish-enter') {
+          drawFishTankSilhouette(ctx, 1);
+          // Goldfish swims from edge to center
+          const eased = 1 - Math.pow(1 - progress, 2);
+          const x = Math.round(startX + (targetX - startX) * eased);
+          drawGoldfishSwimming(
+            ctx,
+            { x, y: goldfishY },
+            elapsed,
+            goldfishDir === 1
+          );
+        } else if (rPhase === 'goldfish-pause') {
+          drawFishTankSilhouette(ctx, 1);
+          // Side view first, then turns to face camera at 60% progress
+          if (progress < 0.5) {
+            drawGoldfishIdle(
+              ctx,
+              { x: targetX, y: goldfishY },
+              elapsed,
+              true
+            );
+          } else {
+            drawGoldfishFacingCamera(
+              ctx,
+              { x: targetX, y: goldfishY },
+              elapsed
+            );
+          }
+        } else if (rPhase === 'card-rise') {
+          drawFishTankSilhouette(ctx, 1);
+          drawGoldfishFacingCamera(
+            ctx,
+            { x: targetX, y: goldfishY },
+            elapsed
+          );
+          // Card rises above Goldfish
+          const eased = 1 - Math.pow(1 - progress, 2);
+          drawCompletionCard(
+            ctx,
+            { centerX: targetX, centerY: goldfishY - 24 },
+            '*blub*',
+            { scale: eased, alpha: eased }
+          );
+          if (!completionSoundPlayedRef.current) {
+            completionSoundPlayedRef.current = true;
+            playClack();
+          }
+        } else if (rPhase === 'card-display') {
+          drawFishTankSilhouette(ctx, 1);
+          drawGoldfishFacingCamera(
+            ctx,
+            { x: targetX, y: goldfishY },
+            elapsed
+          );
+          drawCompletionCard(
+            ctx,
+            { centerX: targetX, centerY: goldfishY - 24 },
+            '*blub*',
+            { scale: 1, alpha: 1 }
+          );
+        } else if (rPhase === 'scene-fill') {
+          // Colors radiate outward
+          drawFishTankRevealFill(ctx, elapsed, progress);
+          // Goldfish stays facing camera during fill
+          drawGoldfishFacingCamera(
+            ctx,
+            { x: targetX, y: goldfishY },
+            elapsed
+          );
+          drawCompletionCard(
+            ctx,
+            { centerX: targetX, centerY: goldfishY - 24 },
+            '*blub*',
+            { scale: 1, alpha: 1 - progress * 0.5 }
+          );
+        } else if (rPhase === 'hold') {
+          drawFishTank(ctx, elapsed);
+          drawGoldfishIdle(
+            ctx,
+            { x: targetX, y: goldfishY },
+            elapsed,
+            true
+          );
+        } else if (rPhase === 'return') {
+          // Fade back to Mouse Cage
+          drawFishTank(ctx, elapsed);
+          drawGoldfishIdle(
+            ctx,
+            { x: targetX, y: goldfishY },
+            elapsed,
+            true
+          );
+          ctx.fillStyle = `rgba(21, 22, 30, ${progress})`;
+          ctx.fillRect(0, 0, NATIVE_WIDTH, NATIVE_HEIGHT);
+        }
+
+        // Auto-finish when sequence completes
+        if (elapsed >= REVEAL_TOTAL_MS) {
+          useTimerStore.getState().finishReveal();
+        }
       }
+
+      // Hide unused vars warning
+      void revealCharacter;
 
       rafRef.current = requestAnimationFrame(render);
     };
@@ -328,7 +486,7 @@ function App() {
   const zoomIn = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const base = manualScaleRef.current || calcIntegerScale(window.innerWidth, window.innerHeight);
+    const base = manualScaleRef.current || getAutoScale();
     manualScaleRef.current = base + 0.25;
     const s = resizeCanvas(canvas, manualScaleRef.current || undefined);
     setScaleToast({ value: s, until: performance.now() + 1500 });
@@ -337,7 +495,7 @@ function App() {
   const zoomOut = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const base = manualScaleRef.current || calcIntegerScale(window.innerWidth, window.innerHeight);
+    const base = manualScaleRef.current || getAutoScale();
     manualScaleRef.current = Math.max(0.25, base - 0.25);
     const s = resizeCanvas(canvas, manualScaleRef.current || undefined);
     setScaleToast({ value: s, until: performance.now() + 1500 });
@@ -363,6 +521,11 @@ function App() {
           {scaleToast.value}× {manualScaleRef.current === 0 ? '(auto)' : '(manual)'}
         </div>
       )}
+
+      {/* Stats overlay — minimal, top-center, low contrast */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 text-kw-white/40 text-[10px] font-mono pointer-events-none select-none whitespace-nowrap">
+        Today {formatHM(todaySec)} · Total {formatHM(totalSec)} · Days {totalDays}
+      </div>
       <div className="absolute bottom-3 right-3 flex gap-1 font-mono text-sm">
         <button
           onClick={zoomOut}
@@ -390,15 +553,27 @@ function App() {
         + / − zoom · 0 reset
       </div>
 
-      {/* Debug-only: trigger a quick 6-second test session */}
+      {/* Debug-only: triggers for quick testing */}
       {import.meta.env.DEV && (
-        <button
-          onClick={() => useTimerStore.getState().startDebug(6)}
-          className="absolute top-4 left-4 px-3 py-1 bg-kw-pink/40 text-kw-white text-xs font-mono rounded border border-kw-pink/60 hover:bg-kw-pink/60"
-          aria-label="Debug: start 6-second test"
-        >
-          ▶ 6s test
-        </button>
+        <div className="absolute top-4 left-4 flex gap-1">
+          <button
+            onClick={() => useTimerStore.getState().startDebug(6)}
+            className="px-3 py-1 bg-kw-pink/40 text-kw-white text-xs font-mono rounded border border-kw-pink/60 hover:bg-kw-pink/60"
+            aria-label="Debug: start 6-second test"
+          >
+            ▶ 6s test
+          </button>
+          <button
+            onClick={() => {
+              useUserStateStore.getState().relockCharacter('goldfish');
+              useTimerStore.getState().startReveal('goldfish');
+            }}
+            className="px-3 py-1 bg-kw-water/50 text-kw-white text-xs font-mono rounded border border-kw-water/70 hover:bg-kw-water/70"
+            aria-label="Debug: replay Goldfish reveal"
+          >
+            🐠 reveal
+          </button>
+        </div>
       )}
     </div>
   );

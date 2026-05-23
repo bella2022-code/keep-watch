@@ -23,6 +23,11 @@ export function calcIntegerScale(viewportW: number, viewportH: number): number {
   return Math.max(1, Math.min(scaleX, scaleY));
 }
 
+/** The effective auto scale (integer fit × AUTO_BOOST). */
+export function getAutoScale(): number {
+  return calcIntegerScale(window.innerWidth, window.innerHeight) * 1.5;
+}
+
 export function setupPixelCanvas(canvas: HTMLCanvasElement): PixelCanvas {
   canvas.width = NATIVE_WIDTH;
   canvas.height = NATIVE_HEIGHT;
@@ -33,8 +38,15 @@ export function setupPixelCanvas(canvas: HTMLCanvasElement): PixelCanvas {
 }
 
 /**
- * Resize the displayed canvas. If manualScale is provided, allow half-step
- * fractional scaling for finer control. Otherwise auto-fit to integer.
+ * Default "auto" scale multiplier. The naive max-integer-fit feels
+ * cinematically small; 1.5x of that fills the viewport more naturally.
+ * User can press − to shrink toward the strict integer fit if they want.
+ */
+const AUTO_BOOST = 1.5;
+
+/**
+ * Resize the displayed canvas. If manualScale is provided, allow fractional
+ * scaling for finer control. Otherwise auto-fit applies AUTO_BOOST.
  * Returns the actual scale applied.
  */
 export function resizeCanvas(
@@ -44,13 +56,10 @@ export function resizeCanvas(
   let scale: number;
   if (manualScale && manualScale > 0) {
     const maxAuto = calcIntegerScale(window.innerWidth, window.innerHeight);
-    // Allow up to 3x the auto-fit max for users who want to zoom in hard.
     scale = Math.max(0.25, Math.min(manualScale, maxAuto * 3));
   } else {
-    scale = calcIntegerScale(window.innerWidth, window.innerHeight);
+    scale = calcIntegerScale(window.innerWidth, window.innerHeight) * AUTO_BOOST;
   }
-  // Round CSS pixel dimensions to integers so the canvas doesn't render
-  // at sub-pixel boundaries (which causes blurring).
   canvas.style.width = `${Math.round(NATIVE_WIDTH * scale)}px`;
   canvas.style.height = `${Math.round(NATIVE_HEIGHT * scale)}px`;
   return scale;
