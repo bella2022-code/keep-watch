@@ -44,6 +44,8 @@ interface Unlocks {
   officer: Unlock;
 }
 
+export type SceneName = 'mouse_cage' | 'fish_tank' | 'astronaut_space';
+
 interface UserState {
   version: string;
   first_used_at: string | null;
@@ -52,6 +54,7 @@ interface UserState {
   today: Today;
   completions: Completions;
   unlocks: Unlocks;
+  currentScene: SceneName;
 
   recordSession: (
     durationSec: number,
@@ -61,6 +64,9 @@ interface UserState {
 
   /** Mark a character as unlocked. Persisted to localStorage. */
   unlockCharacter: (name: keyof Unlocks) => void;
+
+  /** Switch the active scene. */
+  setCurrentScene: (scene: SceneName) => void;
 
   /** Debug-only: re-lock a character so the reveal cinematic can be replayed. */
   relockCharacter: (name: keyof Unlocks) => void;
@@ -97,6 +103,9 @@ export const useUserStateStore = create<UserState>()(
         astronaut: { unlocked: false, unlocked_at: null },
         officer: { unlocked: false, unlocked_at: null },
       },
+      currentScene: 'mouse_cage',
+
+      setCurrentScene: (scene) => set({ currentScene: scene }),
 
       unlockCharacter: (name) => {
         const s = get();

@@ -30,56 +30,164 @@ export function getCardRect(state: CardState) {
   };
 }
 
-export function drawCard(
+export interface CardContent {
+  mode: 'timer' | 'pomodoro';
+  /** Timer-mode minutes value */
+  minutes?: number;
+  /** Pomodoro work minutes */
+  workMinutes?: number;
+  /** Pomodoro rest minutes */
+  restMinutes?: number;
+  /** Pomodoro total cycles */
+  totalCycles?: number;
+  /** During flip animation: 0..1 progress (0 or undefined = no flip). */
+  flipProgress?: number;
+}
+
+/** Returns the fold-corner rect (8×8 px in canvas coords). */
+export function getFoldCornerRect(state: CardState) {
+  const r = getCardRect(state);
+  return { x: r.x + r.w - 7, y: r.y + r.h - 7, w: 7, h: 7 };
+}
+
+/** Internal: draws the front (Timer) face. */
+function drawCardFront(
   ctx: CanvasRenderingContext2D,
-  state: CardState,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
   minutes: number
 ) {
-  const { x, y, w, h } = getCardRect(state);
-
-  // Card body — warm wood
+  // Wood body
   ctx.fillStyle = '#A89478';
   ctx.fillRect(x, y, w, h);
-
-  // Wood grain lines
+  // Grain
   ctx.fillStyle = '#8B7858';
   ctx.fillRect(x, y + 6, w, 1);
   ctx.fillRect(x, y + 14, w, 1);
 
-  // Border
-  ctx.fillStyle = COLORS.black;
-  ctx.fillRect(x, y, w, 1); // top
-  ctx.fillRect(x, y + h - 1, w, 1); // bottom
-  ctx.fillRect(x, y, 1, h); // left
-  ctx.fillRect(x + w - 1, y, 1, h); // right
+  // Time text
+  const mm = minutes.toString().padStart(2, '0');
+  const text = `${mm}:00`;
+  const { w: textW, h: textH } = measurePixelText(text, 1);
+  const textX = x + Math.floor((w - textW) / 2);
+  const textY = y + Math.floor((h - textH) / 2);
+  drawPixelText(ctx, text, textX, textY, COLORS.black, 1);
+}
 
-  // Two hanging holes (top)
-  ctx.fillStyle = COLORS.black;
-  ctx.fillRect(x + 8, y + 2, 1, 1);
-  ctx.fillRect(x + w - 9, y + 2, 1, 1);
+/** Internal: draws the back (Pomodoro) face. */
+function drawCardBack(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  workMin: number,
+  restMin: number,
+  cycles: number
+) {
+  // Slightly darker wood for the back, with reverse grain direction
+  ctx.fillStyle = '#9B8568';
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#806A4F';
+  ctx.fillRect(x + 4, y, 1, h);
+  ctx.fillRect(x + w - 5, y, 1, h);
 
-  // String above (visual: card is hanging)
+  // Row 1: tomato icons (small 4×4 red squares) — one per cycle
+  const tomatoY = y + 4;
+  const totalIconWidth = cycles * 5 - 1;
+  const iconStartX = x + Math.floor((w - totalIconWidth) / 2);
+  ctx.fillStyle = '#C44536';
+  for (let i = 0; i < cycles; i++) {
+    ctx.fillRect(iconStartX + i * 5, tomatoY, 4, 4);
+    // tiny stem
+    ctx.fillStyle = COLORS.green;
+    ctx.fillRect(iconStartX + i * 5 + 1, tomatoY - 1, 2, 1);
+    ctx.fillStyle = '#C44536';
+  }
+
+  // Row 2: "WORK / REST" small text
+  const label = `${workMin}/${restMin}`;
+  const { w: lw } = measurePixelText(label, 1);
+  drawPixelText(
+    ctx,
+    label,
+    x + Math.floor((w - lw) / 2),
+    y + 12,
+    COLORS.black,
+    1
+  );
+}
+
+export function drawCard(
+  ctx: CanvasRenderingContext2D,
+  state: CardState,
+  content: CardContent
+) {
+  const { x, y, w, h } = getCardRect(state);
+  const flipP = content.flipProgress ?? 0;
+
+  // Hanging holes + strings (always visible — they're behind the card)
   ctx.fillStyle = 'rgba(42, 33, 40, 0.6)';
   ctx.fillRect(x + 8, y - 4, 1, 4);
   ctx.fillRect(x + w - 9, y - 4, 1, 4);
 
-  // Format time as MM:SS (always show :00 for setup)
-  const mm = minutes.toString().padStart(2, '0');
-  const text = `${mm}:00`;
+  // During flip: compute squashed width based on cosine
+  // flipP 0..1, width factor = abs(cos(p*PI))
+  const widthFactor = flipP > 0 ? Math.abs(Math.cos(flipP * Math.PI)) : 1;
+  const drawnW = Math.max(2, Math.round(w * widthFactor));
+  const drawnX = Math.round(state.centerX - drawnW / 2);
 
-  // Center the text
-  const { w: textW, h: textH } = measurePixelText(text, 1);
-  const textX = x + Math.floor((w - textW) / 2);
-  const textY = y + Math.floor((h - textH) / 2);
+  // Determine which face to show based on flip progress + mode
+  // When flipP < 0.5: showing departing side; >= 0.5: showing arriving side
+  // The mode in state has already swapped at midpoint, so we use it directly.
+  const showFace: 'front' | 'back' =
+    flipP > 0 && flipP < 0.5
+      ? content.mode === 'timer'
+        ? 'back'
+        : 'front'
+      : content.mode === 'timer'
+      ? 'front'
+      : 'back';
 
-  drawPixelText(ctx, text, textX, textY, COLORS.black, 1);
+  if (showFace === 'front') {
+    drawCardFront(ctx, drawnX, y, drawnW, h, content.minutes ?? 25);
+  } else {
+    drawCardBack(
+      ctx,
+      drawnX,
+      y,
+      drawnW,
+      h,
+      content.workMinutes ?? 25,
+      content.restMinutes ?? 5,
+      content.totalCycles ?? 4
+    );
+  }
 
-  // Fold corner indicator (lower right, 4×4 px)
-  ctx.fillStyle = 'rgba(42, 33, 40, 0.35)';
-  ctx.fillRect(x + w - 5, y + h - 5, 4, 4);
+  // Border around the (possibly squashed) card
   ctx.fillStyle = COLORS.black;
-  ctx.fillRect(x + w - 5, y + h - 5, 4, 1);
-  ctx.fillRect(x + w - 5, y + h - 5, 1, 4);
+  ctx.fillRect(drawnX, y, drawnW, 1);
+  ctx.fillRect(drawnX, y + h - 1, drawnW, 1);
+  ctx.fillRect(drawnX, y, 1, h);
+  ctx.fillRect(drawnX + drawnW - 1, y, 1, h);
+
+  // Hanging holes (only when not deep in flip)
+  if (widthFactor > 0.6) {
+    ctx.fillStyle = COLORS.black;
+    ctx.fillRect(drawnX + 8, y + 2, 1, 1);
+    ctx.fillRect(drawnX + drawnW - 9, y + 2, 1, 1);
+  }
+
+  // Fold corner indicator (only on front face, not during flip)
+  if (showFace === 'front' && flipP === 0) {
+    ctx.fillStyle = 'rgba(42, 33, 40, 0.35)';
+    ctx.fillRect(x + w - 5, y + h - 5, 4, 4);
+    ctx.fillStyle = COLORS.black;
+    ctx.fillRect(x + w - 5, y + h - 5, 4, 1);
+    ctx.fillRect(x + w - 5, y + h - 5, 1, 4);
+  }
 }
 
 /**

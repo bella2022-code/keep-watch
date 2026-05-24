@@ -19,8 +19,10 @@ import {
   drawCompletionCard,
   drawFocusModeClock,
   getCardRect,
+  getFoldCornerRect,
 } from './characters/Card';
 import { drawBubble } from './characters/Bubble';
+import { drawPixelText } from './core/pixelFont';
 import { tickCompanions, drawCompanions, isWheelInUse } from './characters/MouseCompanion';
 import { useTimerStore } from './store/timerStore';
 import { useHintsStore } from './store/hintsStore';
@@ -37,13 +39,23 @@ import {
   drawFishTank,
   drawFishTankSilhouette,
   drawFishTankRevealFill,
+  drawFishCompanions,
 } from './scenes/FishTank';
 import {
   drawGoldfishSwimming,
   drawGoldfishIdle,
   drawGoldfishFacingCamera,
-  type GoldfishState,
 } from './characters/Goldfish';
+import {
+  drawAstronautSpace,
+  drawAstronautSpaceSilhouette,
+  drawAstronautSpaceRevealFill,
+  drawTardigrade,
+} from './scenes/AstronautSpace';
+import {
+  drawAstronautDrifting,
+  drawAstronautFacingCamera,
+} from './characters/Astronaut';
 import { playCompletionSound, playClack } from './core/sound';
 
 function App() {
@@ -102,6 +114,17 @@ function App() {
       return cx >= x - 4 && cx <= x + w + 4 && cy >= y - 4 && cy <= y + h + 4;
     }
 
+    function hitFoldCorner(cx: number, cy: number) {
+      const r = getFoldCornerRect(cardStateRef.current);
+      // Generous hit pad of 3px around the 7×7 corner
+      return (
+        cx >= r.x - 3 &&
+        cx <= r.x + r.w + 3 &&
+        cy >= r.y - 3 &&
+        cy <= r.y + r.h + 3
+      );
+    }
+
     function hitMouse(cx: number, cy: number) {
       const m = mouseStateRef.current;
       return cx >= m.x - 18 && cx <= m.x + 18 && cy >= m.y - 28 && cy <= m.y + 4;
@@ -119,9 +142,14 @@ function App() {
     const onClick = (e: MouseEvent) => {
       const { cx, cy } = eventToCanvas(e);
       const phase = useTimerStore.getState().phase;
-      if (phase === 'idle' && hitMouse(cx, cy)) {
-        useTimerStore.getState().start();
-        useHintsStore.getState().dismissStartHint();
+      if (phase === 'idle') {
+        // Fold-corner takes precedence over Mouse hit (corner is small + at edge)
+        if (hitFoldCorner(cx, cy)) {
+          useTimerStore.getState().flipMode();
+        } else if (hitMouse(cx, cy)) {
+          useTimerStore.getState().start();
+          useHintsStore.getState().dismissStartHint();
+        }
       } else if (phase === 'focusing') {
         useTimerStore.getState().cancel();
       }
@@ -192,6 +220,7 @@ function App() {
       useTimerStore.getState().tick(now);
       tickCompanions(now);
 
+      const ts = useTimerStore.getState();
       const {
         phase,
         setMinutes,
@@ -200,14 +229,30 @@ function App() {
         completionStartedAt,
         revealStartedAt,
         revealCharacter,
-      } = useTimerStore.getState();
+        mode,
+        workMinutes,
+        restMinutes,
+        totalCycles,
+        flipProgress,
+        currentSegment,
+        currentCycle,
+      } = ts;
 
       // Background + scene props for non-reveal phases only
+      const currentScene = useUserStateStore.getState().currentScene;
       if (phase !== 'revealing') {
-        drawMouseCage(ctx);
-        drawBowl(ctx);
-        drawWheel(ctx, now, isWheelInUse());
-        drawCompanions(ctx);
+        if (currentScene === 'mouse_cage') {
+          drawMouseCage(ctx);
+          drawBowl(ctx);
+          drawWheel(ctx, now, isWheelInUse());
+          drawCompanions(ctx);
+        } else if (currentScene === 'fish_tank') {
+          drawFishTank(ctx, now);
+          drawFishCompanions(ctx, now);
+        } else if (currentScene === 'astronaut_space') {
+          drawAstronautSpace(ctx, now);
+          drawTardigrade(ctx, now);
+        }
       }
 
       if (phase === 'idle') {
@@ -215,9 +260,22 @@ function App() {
         completionMessageRef.current = null;
         completionSoundPlayedRef.current = false;
 
-        drawHalo(ctx, mouseStateRef.current, t);
-        drawMouse(ctx, mouseStateRef.current, t);
-        drawCard(ctx, cardStateRef.current, setMinutes);
+        if (currentScene === 'mouse_cage') {
+          drawHalo(ctx, mouseStateRef.current, t);
+          drawMouse(ctx, mouseStateRef.current, t);
+          drawCard(ctx, cardStateRef.current, {
+            mode,
+            minutes: setMinutes,
+            workMinutes,
+            restMinutes,
+            totalCycles,
+            flipProgress,
+          });
+        } else if (currentScene === 'fish_tank') {
+          drawGoldfishIdle(ctx, { x: 240, y: 140 }, t, true);
+        } else if (currentScene === 'astronaut_space') {
+          drawAstronautDrifting(ctx, { x: 240, y: 150 }, t, true);
+        }
 
         const hintAlpha = Math.min(1, Math.max(0, (t - 2000) / 800));
         const { timeHintDismissed, startHintDismissed } = useHintsStore.getState();
@@ -242,6 +300,24 @@ function App() {
         }
       } else if (phase === 'focusing') {
         drawFocusModeClock(ctx, remainingMs, sessionTotalMs);
+
+        // Pomodoro: show current segment + cycle indicator at top-right
+        if (mode === 'pomodoro') {
+          const label =
+            currentSegment === 'work'
+              ? `WORK ${currentCycle}/${totalCycles}`
+              : `REST ${currentCycle}/${totalCycles}`;
+          ctx.globalAlpha = 0.5;
+          drawPixelText(
+            ctx,
+            label.replace(/\D/g, ''), // just the numerals fit pixel font; show "N/M"
+            NATIVE_WIDTH - 32,
+            NATIVE_HEIGHT - 25,
+            currentSegment === 'work' ? '#F4EFE6' : '#7B9268',
+            1
+          );
+          ctx.globalAlpha = 1;
+        }
 
         const focusElapsed = now - useTimerStore.getState().startedAt;
         const hintAlpha = Math.max(0, 1 - focusElapsed / 4000);
@@ -334,15 +410,82 @@ function App() {
 
         const elapsed = now - revealStartedAt;
         const { phase: rPhase, progress } = getRevealPhase(elapsed);
-
-        // Goldfish swims in from random side
-        const goldfishDir: 1 | -1 = 1;
         const targetX = Math.floor(NATIVE_WIDTH / 2);
-        const startX = goldfishDir === 1 ? -20 : NATIVE_WIDTH + 20;
-        const goldfishY = 140;
+
+        // Character-specific config
+        const isGoldfish = revealCharacter === 'goldfish';
+        const isAstronaut = revealCharacter === 'astronaut';
+        const charDir: 1 | -1 = 1;
+        const charY = isGoldfish ? 140 : 150;
+        const startX = charDir === 1 ? -20 : NATIVE_WIDTH + 20;
+        const cardText = isGoldfish
+          ? '*blub*'
+          : isAstronaut
+          ? 'Ground, this is Astro.'
+          : '...';
+
+        // Scene drawing functions for this character
+        const drawSilhouette = isAstronaut
+          ? drawAstronautSpaceSilhouette
+          : drawFishTankSilhouette;
+        const drawColored = isAstronaut ? drawAstronautSpace : drawFishTank;
+        const drawRevealFill = isAstronaut
+          ? drawAstronautSpaceRevealFill
+          : drawFishTankRevealFill;
+
+        // Character draw helpers
+        const drawCharEnter = (x: number) => {
+          if (isAstronaut) {
+            drawAstronautDrifting(
+              ctx,
+              { x, y: charY },
+              elapsed,
+              charDir === 1
+            );
+          } else {
+            drawGoldfishSwimming(
+              ctx,
+              { x, y: charY },
+              elapsed,
+              charDir === 1
+            );
+          }
+        };
+        const drawCharIdle = () => {
+          if (isAstronaut) {
+            drawAstronautDrifting(
+              ctx,
+              { x: targetX, y: charY },
+              elapsed,
+              charDir === 1
+            );
+          } else {
+            drawGoldfishIdle(
+              ctx,
+              { x: targetX, y: charY },
+              elapsed,
+              charDir === 1
+            );
+          }
+        };
+        const drawCharFront = () => {
+          if (isAstronaut) {
+            drawAstronautFacingCamera(
+              ctx,
+              { x: targetX, y: charY },
+              elapsed
+            );
+          } else {
+            drawGoldfishFacingCamera(
+              ctx,
+              { x: targetX, y: charY },
+              elapsed
+            );
+          }
+        };
 
         if (rPhase === 'fade-out') {
-          // Mouse Cage fading to black
+          // Old scene fading to black
           drawMouseCage(ctx);
           drawBowl(ctx);
           drawWheel(ctx, now, false);
@@ -350,51 +493,29 @@ function App() {
           ctx.fillStyle = `rgba(21, 22, 30, ${progress})`;
           ctx.fillRect(0, 0, NATIVE_WIDTH, NATIVE_HEIGHT);
         } else if (rPhase === 'silhouette') {
-          // Fish Tank silhouette fades in
           ctx.fillStyle = '#15161E';
           ctx.fillRect(0, 0, NATIVE_WIDTH, NATIVE_HEIGHT);
-          drawFishTankSilhouette(ctx, progress);
+          drawSilhouette(ctx, progress);
         } else if (rPhase === 'goldfish-enter') {
-          drawFishTankSilhouette(ctx, 1);
-          // Goldfish swims from edge to center
+          drawSilhouette(ctx, 1);
           const eased = 1 - Math.pow(1 - progress, 2);
           const x = Math.round(startX + (targetX - startX) * eased);
-          drawGoldfishSwimming(
-            ctx,
-            { x, y: goldfishY },
-            elapsed,
-            goldfishDir === 1
-          );
+          drawCharEnter(x);
         } else if (rPhase === 'goldfish-pause') {
-          drawFishTankSilhouette(ctx, 1);
-          // Side view first, then turns to face camera at 60% progress
+          drawSilhouette(ctx, 1);
           if (progress < 0.5) {
-            drawGoldfishIdle(
-              ctx,
-              { x: targetX, y: goldfishY },
-              elapsed,
-              true
-            );
+            drawCharIdle();
           } else {
-            drawGoldfishFacingCamera(
-              ctx,
-              { x: targetX, y: goldfishY },
-              elapsed
-            );
+            drawCharFront();
           }
         } else if (rPhase === 'card-rise') {
-          drawFishTankSilhouette(ctx, 1);
-          drawGoldfishFacingCamera(
-            ctx,
-            { x: targetX, y: goldfishY },
-            elapsed
-          );
-          // Card rises above Goldfish
+          drawSilhouette(ctx, 1);
+          drawCharFront();
           const eased = 1 - Math.pow(1 - progress, 2);
           drawCompletionCard(
             ctx,
-            { centerX: targetX, centerY: goldfishY - 24 },
-            '*blub*',
+            { centerX: targetX, centerY: charY - 28 },
+            cardText,
             { scale: eased, alpha: eased }
           );
           if (!completionSoundPlayedRef.current) {
@@ -402,62 +523,37 @@ function App() {
             playClack();
           }
         } else if (rPhase === 'card-display') {
-          drawFishTankSilhouette(ctx, 1);
-          drawGoldfishFacingCamera(
-            ctx,
-            { x: targetX, y: goldfishY },
-            elapsed
-          );
+          drawSilhouette(ctx, 1);
+          drawCharFront();
           drawCompletionCard(
             ctx,
-            { centerX: targetX, centerY: goldfishY - 24 },
-            '*blub*',
+            { centerX: targetX, centerY: charY - 28 },
+            cardText,
             { scale: 1, alpha: 1 }
           );
         } else if (rPhase === 'scene-fill') {
-          // Colors radiate outward
-          drawFishTankRevealFill(ctx, elapsed, progress);
-          // Goldfish stays facing camera during fill
-          drawGoldfishFacingCamera(
-            ctx,
-            { x: targetX, y: goldfishY },
-            elapsed
-          );
+          drawRevealFill(ctx, elapsed, progress);
+          drawCharFront();
           drawCompletionCard(
             ctx,
-            { centerX: targetX, centerY: goldfishY - 24 },
-            '*blub*',
+            { centerX: targetX, centerY: charY - 28 },
+            cardText,
             { scale: 1, alpha: 1 - progress * 0.5 }
           );
         } else if (rPhase === 'hold') {
-          drawFishTank(ctx, elapsed);
-          drawGoldfishIdle(
-            ctx,
-            { x: targetX, y: goldfishY },
-            elapsed,
-            true
-          );
+          drawColored(ctx, elapsed);
+          drawCharIdle();
         } else if (rPhase === 'return') {
-          // Fade back to Mouse Cage
-          drawFishTank(ctx, elapsed);
-          drawGoldfishIdle(
-            ctx,
-            { x: targetX, y: goldfishY },
-            elapsed,
-            true
-          );
+          drawColored(ctx, elapsed);
+          drawCharIdle();
           ctx.fillStyle = `rgba(21, 22, 30, ${progress})`;
           ctx.fillRect(0, 0, NATIVE_WIDTH, NATIVE_HEIGHT);
         }
 
-        // Auto-finish when sequence completes
         if (elapsed >= REVEAL_TOTAL_MS) {
           useTimerStore.getState().finishReveal();
         }
       }
-
-      // Hide unused vars warning
-      void revealCharacter;
 
       rafRef.current = requestAnimationFrame(render);
     };
@@ -572,6 +668,39 @@ function App() {
             aria-label="Debug: replay Goldfish reveal"
           >
             🐠 reveal
+          </button>
+          <button
+            onClick={() => {
+              useUserStateStore.getState().relockCharacter('astronaut');
+              useTimerStore.getState().startReveal('astronaut');
+            }}
+            className="px-3 py-1 bg-kw-space/70 text-kw-white text-xs font-mono rounded border border-kw-white/30 hover:bg-kw-space/90"
+            aria-label="Debug: replay Astronaut reveal"
+          >
+            🚀 reveal
+          </button>
+        </div>
+      )}
+      {/* Scene switcher (debug — for previewing scenes before sidebar is built) */}
+      {import.meta.env.DEV && (
+        <div className="absolute top-14 left-4 flex gap-1">
+          <button
+            onClick={() => useUserStateStore.getState().setCurrentScene('mouse_cage')}
+            className="px-2 py-1 bg-kw-wood/40 text-kw-white text-[10px] font-mono rounded border border-kw-wood/60 hover:bg-kw-wood/60"
+          >
+            🐭 cage
+          </button>
+          <button
+            onClick={() => useUserStateStore.getState().setCurrentScene('fish_tank')}
+            className="px-2 py-1 bg-kw-water/40 text-kw-white text-[10px] font-mono rounded border border-kw-water/60 hover:bg-kw-water/60"
+          >
+            🐠 tank
+          </button>
+          <button
+            onClick={() => useUserStateStore.getState().setCurrentScene('astronaut_space')}
+            className="px-2 py-1 bg-kw-space/70 text-kw-white text-[10px] font-mono rounded border border-kw-white/30 hover:bg-kw-space/90"
+          >
+            🚀 space
           </button>
         </div>
       )}
