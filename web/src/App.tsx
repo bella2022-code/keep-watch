@@ -18,15 +18,19 @@ import {
   drawCard,
   drawCompletionCard,
   drawFocusModeClock,
+  drawModeToggle,
   getCardRect,
   getFoldCornerRect,
+  getPomodoroZones,
+  getModeToggleRects,
 } from './characters/Card';
 import { drawBubble } from './characters/Bubble';
 import { drawPixelText } from './core/pixelFont';
 import { tickCompanions, drawCompanions, isWheelInUse } from './characters/MouseCompanion';
 import { useTimerStore } from './store/timerStore';
 import { useHintsStore } from './store/hintsStore';
-import { useUserStateStore, formatHM } from './store/userStateStore';
+import { useUserStateStore, formatHM, type SceneName } from './store/userStateStore';
+import { useSettingsStore } from './store/settingsStore';
 import { pickMouseMessage, type CardMessage } from './store/messages';
 import {
   COMPLETION_TOTAL_MS,
@@ -56,7 +60,21 @@ import {
   drawAstronautDrifting,
   drawAstronautFacingCamera,
 } from './characters/Astronaut';
+import {
+  drawOfficerRoom,
+  drawOfficerRoomSilhouette,
+  drawOfficerRoomRevealFill,
+} from './scenes/OfficerRoom';
+import {
+  drawOfficerIdle,
+  drawOfficerWalking,
+  drawOfficerFacingCamera,
+  drawOfficerSalute,
+} from './characters/Officer';
+import { drawRainyPond } from './scenes/RainyPond';
+import { drawFrogIdle } from './characters/Frog';
 import { playCompletionSound, playClack } from './core/sound';
+import { applyTint, resolveTint } from './core/tint';
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -64,11 +82,43 @@ function App() {
   const rafRef = useRef<number>(0);
   const manualScaleRef = useRef<number>(0);
   const [scaleToast, setScaleToast] = useState<{ value: number; until: number } | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [devTrayOpen, setDevTrayOpen] = useState(false);
 
   // Reactive subscriptions for the stats overlay
   const todaySec = useUserStateStore((s) => s.today.seconds);
   const totalSec = useUserStateStore((s) => s.total_focus_seconds);
   const totalDays = useUserStateStore((s) => s.total_focus_days);
+
+  // Reactive timer phase + pause state (for pause UI)
+  const phaseSub = useTimerStore((s) => s.phase);
+  const pausedAtSub = useTimerStore((s) => s.pausedAt);
+  const isPaused = pausedAtSub > 0;
+  const currentSceneSel = useUserStateStore((s) => s.currentScene);
+  const unlocks = useUserStateStore((s) => s.unlocks);
+  const volume = useSettingsStore((s) => s.volume);
+  const muted = useSettingsStore((s) => s.muted);
+  const theme = useSettingsStore((s) => s.theme);
+
+  // Pause / resume timer when sidebar opens / closes during focus
+  useEffect(() => {
+    if (sidebarOpen) {
+      useTimerStore.getState().pause();
+    } else {
+      useTimerStore.getState().resume();
+    }
+  }, [sidebarOpen]);
+
+  // Close sidebar on Esc
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && sidebarOpen) {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sidebarOpen]);
 
   const mouseStateRef = useRef<MouseState>({
     x: Math.floor(NATIVE_WIDTH / 2),
@@ -125,6 +175,33 @@ function App() {
       );
     }
 
+    /** Returns 'timer' / 'pomo' / null based on which mode toggle was hit. */
+    function hitModeToggle(cx: number, cy: number): 'timer' | 'pomo' | null {
+      const r = getModeToggleRects(cardStateRef.current);
+      const inside = (zone: { x: number; y: number; w: number; h: number }) =>
+        cx >= zone.x - 3 && cx <= zone.x + zone.w + 3 &&
+        cy >= zone.y - 3 && cy <= zone.y + zone.h + 3;
+      if (inside(r.timer)) return 'timer';
+      if (inside(r.pomo)) return 'pomo';
+      return null;
+    }
+
+    /** Which Pomodoro zone is the point in? Returns null if outside the card. */
+    function hitPomodoroZone(
+      cx: number,
+      cy: number
+    ): 'cycles' | 'work' | 'rest' | null {
+      const z = getPomodoroZones(cardStateRef.current);
+      if (cx >= z.cycles.x && cx < z.cycles.x + z.cycles.w) {
+        if (cy >= z.cycles.y && cy < z.cycles.y + z.cycles.h) return 'cycles';
+        if (cy >= z.work.y && cy < z.work.y + z.work.h) {
+          if (cx < z.rest.x) return 'work';
+          return 'rest';
+        }
+      }
+      return null;
+    }
+
     function hitMouse(cx: number, cy: number) {
       const m = mouseStateRef.current;
       return cx >= m.x - 18 && cx <= m.x + 18 && cy >= m.y - 28 && cy <= m.y + 4;
@@ -135,23 +212,57 @@ function App() {
       if (!hitCard(cx, cy)) return;
       e.preventDefault();
       const direction = e.deltaY < 0 ? 1 : -1;
-      useTimerStore.getState().adjustMinutes(direction);
+      // In Pomodoro mode, scrolling on a specific zone switches focus first,
+      // so the user's scroll always adjusts what they're aiming at.
+      const ts = useTimerStore.getState();
+      if (ts.mode === 'pomodoro') {
+        const zone = hitPomodoroZone(cx, cy);
+        if (zone) ts.setPomodoroFocus(zone);
+      }
+      ts.adjustMinutes(direction);
       useHintsStore.getState().dismissTimeHint();
     };
 
     const onClick = (e: MouseEvent) => {
       const { cx, cy } = eventToCanvas(e);
-      const phase = useTimerStore.getState().phase;
+      const ts = useTimerStore.getState();
+      const phase = ts.phase;
       if (phase === 'idle') {
-        // Fold-corner takes precedence over Mouse hit (corner is small + at edge)
+        // Mode toggle clicks (TIMER / POMO labels below the card)
+        const toggleHit = hitModeToggle(cx, cy);
+        if (toggleHit) {
+          if (
+            (toggleHit === 'timer' && ts.mode !== 'timer') ||
+            (toggleHit === 'pomo' && ts.mode !== 'pomodoro')
+          ) {
+            ts.flipMode();
+          }
+          return;
+        }
+        // Fold-corner takes precedence over the broader card area
         if (hitFoldCorner(cx, cy)) {
-          useTimerStore.getState().flipMode();
+          ts.flipMode();
+        } else if (ts.mode === 'pomodoro' && hitCard(cx, cy)) {
+          // Pomodoro mode: click on a card zone selects which setting to adjust
+          const zone = hitPomodoroZone(cx, cy);
+          if (zone) ts.setPomodoroFocus(zone);
         } else if (hitMouse(cx, cy)) {
-          useTimerStore.getState().start();
+          // Click on Mouse → start
+          ts.start();
+          useHintsStore.getState().dismissStartHint();
+        } else if (ts.mode === 'timer' && hitCard(cx, cy)) {
+          // Timer mode: clicking the card also starts
+          ts.start();
           useHintsStore.getState().dismissStartHint();
         }
       } else if (phase === 'focusing') {
-        useTimerStore.getState().cancel();
+        // Click during focus toggles pause/resume
+        const s = useTimerStore.getState();
+        if (s.pausedAt > 0) {
+          s.resume();
+        } else {
+          s.pause();
+        }
       }
     };
 
@@ -236,6 +347,7 @@ function App() {
         flipProgress,
         currentSegment,
         currentCycle,
+        pomodoroFocus,
       } = ts;
 
       // Background + scene props for non-reveal phases only
@@ -252,6 +364,10 @@ function App() {
         } else if (currentScene === 'astronaut_space') {
           drawAstronautSpace(ctx, now);
           drawTardigrade(ctx, now);
+        } else if (currentScene === 'officer_room') {
+          drawOfficerRoom(ctx, now);
+        } else if (currentScene === 'rainy_pond') {
+          drawRainyPond(ctx, now);
         }
       }
 
@@ -270,11 +386,18 @@ function App() {
             restMinutes,
             totalCycles,
             flipProgress,
+            pomodoroFocus,
           });
+          // Mode toggle below the card
+          drawModeToggle(ctx, cardStateRef.current, mode);
         } else if (currentScene === 'fish_tank') {
           drawGoldfishIdle(ctx, { x: 240, y: 140 }, t, true);
         } else if (currentScene === 'astronaut_space') {
           drawAstronautDrifting(ctx, { x: 240, y: 150 }, t, true);
+        } else if (currentScene === 'officer_room') {
+          drawOfficerIdle(ctx, { x: 240, y: 200 }, t, true);
+        } else if (currentScene === 'rainy_pond') {
+          drawFrogIdle(ctx, { x: 240, y: 185 }, t, true);
         }
 
         const hintAlpha = Math.min(1, Math.max(0, (t - 2000) / 800));
@@ -415,72 +538,62 @@ function App() {
         // Character-specific config
         const isGoldfish = revealCharacter === 'goldfish';
         const isAstronaut = revealCharacter === 'astronaut';
+        const isOfficer = revealCharacter === 'officer';
         const charDir: 1 | -1 = 1;
-        const charY = isGoldfish ? 140 : 150;
+        const charY = isGoldfish ? 140 : isAstronaut ? 150 : 200;
         const startX = charDir === 1 ? -20 : NATIVE_WIDTH + 20;
         const cardText = isGoldfish
           ? '*blub*'
           : isAstronaut
           ? 'Ground, this is Astro.'
+          : isOfficer
+          ? 'Reporting in.'
           : '...';
+        const cardBackText = isOfficer ? "I've been watching." : '';
 
         // Scene drawing functions for this character
         const drawSilhouette = isAstronaut
           ? drawAstronautSpaceSilhouette
+          : isOfficer
+          ? drawOfficerRoomSilhouette
           : drawFishTankSilhouette;
-        const drawColored = isAstronaut ? drawAstronautSpace : drawFishTank;
+        const drawColored = isAstronaut
+          ? drawAstronautSpace
+          : isOfficer
+          ? drawOfficerRoom
+          : drawFishTank;
         const drawRevealFill = isAstronaut
           ? drawAstronautSpaceRevealFill
+          : isOfficer
+          ? drawOfficerRoomRevealFill
           : drawFishTankRevealFill;
 
         // Character draw helpers
         const drawCharEnter = (x: number) => {
           if (isAstronaut) {
-            drawAstronautDrifting(
-              ctx,
-              { x, y: charY },
-              elapsed,
-              charDir === 1
-            );
+            drawAstronautDrifting(ctx, { x, y: charY }, elapsed, charDir === 1);
+          } else if (isOfficer) {
+            drawOfficerWalking(ctx, { x, y: charY }, elapsed, charDir === 1);
           } else {
-            drawGoldfishSwimming(
-              ctx,
-              { x, y: charY },
-              elapsed,
-              charDir === 1
-            );
+            drawGoldfishSwimming(ctx, { x, y: charY }, elapsed, charDir === 1);
           }
         };
         const drawCharIdle = () => {
           if (isAstronaut) {
-            drawAstronautDrifting(
-              ctx,
-              { x: targetX, y: charY },
-              elapsed,
-              charDir === 1
-            );
+            drawAstronautDrifting(ctx, { x: targetX, y: charY }, elapsed, charDir === 1);
+          } else if (isOfficer) {
+            drawOfficerIdle(ctx, { x: targetX, y: charY }, elapsed, charDir === 1);
           } else {
-            drawGoldfishIdle(
-              ctx,
-              { x: targetX, y: charY },
-              elapsed,
-              charDir === 1
-            );
+            drawGoldfishIdle(ctx, { x: targetX, y: charY }, elapsed, charDir === 1);
           }
         };
         const drawCharFront = () => {
           if (isAstronaut) {
-            drawAstronautFacingCamera(
-              ctx,
-              { x: targetX, y: charY },
-              elapsed
-            );
+            drawAstronautFacingCamera(ctx, { x: targetX, y: charY }, elapsed);
+          } else if (isOfficer) {
+            drawOfficerFacingCamera(ctx, { x: targetX, y: charY }, elapsed);
           } else {
-            drawGoldfishFacingCamera(
-              ctx,
-              { x: targetX, y: charY },
-              elapsed
-            );
+            drawGoldfishFacingCamera(ctx, { x: targetX, y: charY }, elapsed);
           }
         };
 
@@ -514,7 +627,7 @@ function App() {
           const eased = 1 - Math.pow(1 - progress, 2);
           drawCompletionCard(
             ctx,
-            { centerX: targetX, centerY: charY - 28 },
+            { centerX: targetX, centerY: isOfficer ? charY - 50 : charY - 28 },
             cardText,
             { scale: eased, alpha: eased }
           );
@@ -525,18 +638,73 @@ function App() {
         } else if (rPhase === 'card-display') {
           drawSilhouette(ctx, 1);
           drawCharFront();
-          drawCompletionCard(
-            ctx,
-            { centerX: targetX, centerY: charY - 28 },
-            cardText,
-            { scale: 1, alpha: 1 }
-          );
+          const cardCY = isOfficer ? charY - 50 : charY - 32;
+
+          if (isOfficer) {
+            // Officer's signature card-flip ritual
+            // Timeline within card-display: 0-0.35 front, 0.35-0.65 flip, 0.65-1 back
+            if (progress < 0.35) {
+              drawCompletionCard(
+                ctx,
+                { centerX: targetX, centerY: cardCY },
+                cardText,
+                { scale: 1, alpha: 1 }
+              );
+            } else if (progress < 0.65) {
+              // Flip animation — squash card horizontally
+              const flipP = (progress - 0.35) / 0.3;
+              const widthFactor = Math.abs(Math.cos(flipP * Math.PI));
+              const showBack = flipP >= 0.5;
+              ctx.save();
+              ctx.translate(targetX, cardCY);
+              ctx.scale(Math.max(0.05, widthFactor), 1);
+              ctx.translate(-targetX, -cardCY);
+              if (showBack) {
+                // Show blank back card (heart will appear after flip)
+                drawCompletionCard(
+                  ctx,
+                  { centerX: targetX, centerY: cardCY },
+                  ' ',
+                  { scale: 1, alpha: 1 }
+                );
+              } else {
+                drawCompletionCard(
+                  ctx,
+                  { centerX: targetX, centerY: cardCY },
+                  cardText,
+                  { scale: 1, alpha: 1 }
+                );
+              }
+              ctx.restore();
+              if (showBack && !completionSoundPlayedRef.current) {
+                completionSoundPlayedRef.current = true;
+                playClack();
+              }
+            } else {
+              // Back of card — empty card with BIG pink heart centered
+              drawCompletionCard(
+                ctx,
+                { centerX: targetX, centerY: cardCY },
+                ' ',
+                { scale: 1, alpha: 1 }
+              );
+              // Big centered pink heart (9 wide × 8 tall)
+              drawBigHeart(ctx, targetX, cardCY);
+            }
+          } else {
+            drawCompletionCard(
+              ctx,
+              { centerX: targetX, centerY: cardCY },
+              cardText,
+              { scale: 1, alpha: 1 }
+            );
+          }
         } else if (rPhase === 'scene-fill') {
           drawRevealFill(ctx, elapsed, progress);
           drawCharFront();
           drawCompletionCard(
             ctx,
-            { centerX: targetX, centerY: charY - 28 },
+            { centerX: targetX, centerY: isOfficer ? charY - 50 : charY - 28 },
             cardText,
             { scale: 1, alpha: 1 - progress * 0.5 }
           );
@@ -553,6 +721,14 @@ function App() {
         if (elapsed >= REVEAL_TOTAL_MS) {
           useTimerStore.getState().finishReveal();
         }
+      }
+
+      // ===== Time-of-day tint overlay (applied last, over everything) =====
+      // Theme color shifts happen at scene/character render time, not here.
+      if (phase !== 'revealing') {
+        const bgMode = useSettingsStore.getState().backgroundMode;
+        const tint = resolveTint(bgMode);
+        applyTint(ctx, tint);
       }
 
       rafRef.current = requestAnimationFrame(render);
@@ -605,13 +781,75 @@ function App() {
     setScaleToast({ value: s, until: performance.now() + 1500 });
   };
 
+  // Show paused state when user explicitly paused (not when sidebar caused pause)
+  const showPausedOverlay =
+    isPaused && !sidebarOpen && phaseSub === 'focusing';
+
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-kw-black overflow-hidden relative">
       <canvas
         ref={canvasRef}
-        className="block cursor-pointer"
+        className={`block cursor-pointer transition-all duration-300 ${
+          showPausedOverlay ? 'blur-[2px] brightness-75' : ''
+        }`}
         aria-label="Keep Watch — Mouse Cage scene"
       />
+
+      {/* Pause + Stop buttons — visible during focus mode */}
+      {phaseSub === 'focusing' && !sidebarOpen && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-2 z-20">
+          <button
+            onClick={() => {
+              const s = useTimerStore.getState();
+              if (s.pausedAt > 0) s.resume();
+              else s.pause();
+            }}
+            className="w-10 h-10 flex items-center justify-center bg-kw-black/60 hover:bg-kw-black/80 border border-kw-white/30 rounded-full text-kw-white text-lg"
+            aria-label={isPaused ? 'Resume' : 'Pause'}
+          >
+            {isPaused ? '▶' : '⏸'}
+          </button>
+          <button
+            onClick={() => useTimerStore.getState().cancel()}
+            className="w-10 h-10 flex items-center justify-center bg-kw-black/60 hover:bg-kw-pink/40 border border-kw-white/30 hover:border-kw-pink/60 rounded-full text-kw-white text-sm"
+            aria-label="Stop"
+          >
+            ■
+          </button>
+        </div>
+      )}
+
+      {/* Paused overlay — foggy text overlay (companions still tick behind the blur) */}
+      {showPausedOverlay && (
+        <div
+          onClick={() => useTimerStore.getState().resume()}
+          className="absolute inset-0 flex items-center justify-center cursor-pointer z-10"
+        >
+          <div
+            className="bg-kw-black/40 backdrop-blur-sm px-8 py-6 rounded-lg text-kw-white font-mono text-center border border-kw-white/15"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-3xl tracking-[0.3em] mb-5">PAUSED</div>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => useTimerStore.getState().resume()}
+                className="px-4 py-2 bg-kw-black/40 hover:bg-kw-black/60 border border-kw-white/30 rounded text-sm cursor-pointer"
+              >
+                ▶ Resume
+              </button>
+              <button
+                onClick={() => useTimerStore.getState().cancel()}
+                className="px-4 py-2 bg-kw-black/40 hover:bg-kw-pink/40 border border-kw-white/30 hover:border-kw-pink/60 rounded text-sm cursor-pointer"
+              >
+                ■ Stop
+              </button>
+            </div>
+            <div className="text-[10px] text-kw-white/40 mt-4 tracking-wider">
+              or tap outside to resume
+            </div>
+          </div>
+        </div>
+      )}
       {scaleToast && (
         <div className="absolute top-4 right-4 px-3 py-1 bg-kw-black/70 text-kw-white text-xs font-mono rounded pointer-events-none">
           {scaleToast.value}× {manualScaleRef.current === 0 ? '(auto)' : '(manual)'}
@@ -649,62 +887,349 @@ function App() {
         + / − zoom · 0 reset
       </div>
 
-      {/* Debug-only: triggers for quick testing */}
+      {/* Hamburger menu — opens sidebar */}
+      <button
+        onClick={() => setSidebarOpen(true)}
+        className="absolute top-4 left-4 w-9 h-9 flex flex-col justify-center items-center gap-1 bg-kw-black/60 hover:bg-kw-black/80 border border-kw-white/20 rounded"
+        aria-label="Open menu"
+      >
+        <span className="block w-5 h-[2px] bg-kw-white" />
+        <span className="block w-5 h-[2px] bg-kw-white" />
+        <span className="block w-5 h-[2px] bg-kw-white" />
+      </button>
+
+      {/* Sidebar + backdrop */}
+      <Sidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        currentScene={currentSceneSel}
+        unlocks={unlocks}
+        volume={volume}
+        muted={muted}
+        theme={theme}
+        todaySec={todaySec}
+        totalSec={totalSec}
+        totalDays={totalDays}
+      />
+
+      {/* Dev tray — collapsed by default */}
       {import.meta.env.DEV && (
-        <div className="absolute top-4 left-4 flex gap-1">
+        <div className="absolute top-4 right-16 flex flex-col items-end gap-1">
           <button
-            onClick={() => useTimerStore.getState().startDebug(6)}
-            className="px-3 py-1 bg-kw-pink/40 text-kw-white text-xs font-mono rounded border border-kw-pink/60 hover:bg-kw-pink/60"
-            aria-label="Debug: start 6-second test"
+            onClick={() => setDevTrayOpen((v) => !v)}
+            className="px-2 h-7 bg-kw-black/60 text-kw-white/60 text-[10px] font-mono rounded border border-kw-white/10 hover:bg-kw-black/80"
+            aria-label="Toggle dev tools"
           >
-            ▶ 6s test
+            {devTrayOpen ? '✕ dev' : '⚙ dev'}
           </button>
-          <button
-            onClick={() => {
-              useUserStateStore.getState().relockCharacter('goldfish');
-              useTimerStore.getState().startReveal('goldfish');
-            }}
-            className="px-3 py-1 bg-kw-water/50 text-kw-white text-xs font-mono rounded border border-kw-water/70 hover:bg-kw-water/70"
-            aria-label="Debug: replay Goldfish reveal"
-          >
-            🐠 reveal
-          </button>
-          <button
-            onClick={() => {
-              useUserStateStore.getState().relockCharacter('astronaut');
-              useTimerStore.getState().startReveal('astronaut');
-            }}
-            className="px-3 py-1 bg-kw-space/70 text-kw-white text-xs font-mono rounded border border-kw-white/30 hover:bg-kw-space/90"
-            aria-label="Debug: replay Astronaut reveal"
-          >
-            🚀 reveal
-          </button>
-        </div>
-      )}
-      {/* Scene switcher (debug — for previewing scenes before sidebar is built) */}
-      {import.meta.env.DEV && (
-        <div className="absolute top-14 left-4 flex gap-1">
-          <button
-            onClick={() => useUserStateStore.getState().setCurrentScene('mouse_cage')}
-            className="px-2 py-1 bg-kw-wood/40 text-kw-white text-[10px] font-mono rounded border border-kw-wood/60 hover:bg-kw-wood/60"
-          >
-            🐭 cage
-          </button>
-          <button
-            onClick={() => useUserStateStore.getState().setCurrentScene('fish_tank')}
-            className="px-2 py-1 bg-kw-water/40 text-kw-white text-[10px] font-mono rounded border border-kw-water/60 hover:bg-kw-water/60"
-          >
-            🐠 tank
-          </button>
-          <button
-            onClick={() => useUserStateStore.getState().setCurrentScene('astronaut_space')}
-            className="px-2 py-1 bg-kw-space/70 text-kw-white text-[10px] font-mono rounded border border-kw-white/30 hover:bg-kw-space/90"
-          >
-            🚀 space
-          </button>
+          {devTrayOpen && (
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={() => useTimerStore.getState().startDebug(6)}
+                className="px-3 py-1 bg-kw-pink/40 text-kw-white text-xs font-mono rounded border border-kw-pink/60 hover:bg-kw-pink/60"
+              >
+                ▶ 6s test
+              </button>
+              <button
+                onClick={() => useTimerStore.getState().startReveal('goldfish')}
+                className="px-3 py-1 bg-kw-water/50 text-kw-white text-xs font-mono rounded border border-kw-water/70 hover:bg-kw-water/70"
+              >
+                🐠 reveal
+              </button>
+              <button
+                onClick={() => useTimerStore.getState().startReveal('astronaut')}
+                className="px-3 py-1 bg-kw-space/70 text-kw-white text-xs font-mono rounded border border-kw-white/30 hover:bg-kw-space/90"
+              >
+                🚀 reveal
+              </button>
+              <button
+                onClick={() => useTimerStore.getState().startReveal('officer')}
+                className="px-3 py-1 bg-kw-green/40 text-kw-white text-xs font-mono rounded border border-kw-green/60 hover:bg-kw-green/60"
+              >
+                🪖 reveal
+              </button>
+              {/* Manual unlock all (for previewing all scenes immediately) */}
+              <button
+                onClick={() => {
+                  const s = useUserStateStore.getState();
+                  s.unlockCharacter('goldfish');
+                  s.unlockCharacter('astronaut');
+                  s.unlockCharacter('officer');
+                }}
+                className="px-3 py-1 bg-kw-green/30 text-kw-white text-[10px] font-mono rounded border border-kw-green/50 hover:bg-kw-green/50"
+              >
+                🔓 unlock all
+              </button>
+              {/* Manual relock for testing "first unlock" flow */}
+              <button
+                onClick={() => {
+                  const s = useUserStateStore.getState();
+                  s.relockCharacter('goldfish');
+                  s.relockCharacter('astronaut');
+                  s.relockCharacter('officer');
+                }}
+                className="px-3 py-1 bg-kw-black/60 text-kw-white/70 text-[10px] font-mono rounded border border-kw-white/20 hover:bg-kw-black/80"
+              >
+                🔒 lock all
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Draws a big pink pixel heart centered on (cx, cy).
+ * Shape: 9 wide × 8 tall classic pixel heart.
+ */
+function drawBigHeart(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  const pink = '#E89BAA';
+  const darkPink = '#C4798B';
+  const highlight = '#F4D8DE';
+
+  // Pattern (0 = empty, 1 = main pink, 2 = highlight, 3 = dark outline)
+  const pattern = [
+    [0, 3, 3, 0, 0, 0, 3, 3, 0],
+    [3, 2, 1, 3, 0, 3, 1, 1, 3],
+    [3, 2, 1, 1, 3, 1, 1, 1, 3],
+    [3, 1, 1, 1, 1, 1, 1, 1, 3],
+    [0, 3, 1, 1, 1, 1, 1, 3, 0],
+    [0, 0, 3, 1, 1, 1, 3, 0, 0],
+    [0, 0, 0, 3, 1, 3, 0, 0, 0],
+    [0, 0, 0, 0, 3, 0, 0, 0, 0],
+  ];
+
+  const heartW = 9;
+  const heartH = 8;
+  const startX = Math.round(cx - heartW / 2);
+  const startY = Math.round(cy - heartH / 2);
+
+  for (let row = 0; row < heartH; row++) {
+    for (let col = 0; col < heartW; col++) {
+      const v = pattern[row][col];
+      if (v === 0) continue;
+      ctx.fillStyle = v === 1 ? pink : v === 2 ? highlight : darkPink;
+      ctx.fillRect(startX + col, startY + row, 1, 1);
+    }
+  }
+}
+
+/* ============================================================
+ * Sidebar component
+ * ============================================================ */
+
+interface SidebarProps {
+  open: boolean;
+  onClose: () => void;
+  currentScene: SceneName;
+  unlocks: {
+    mouse: { unlocked: boolean };
+    goldfish: { unlocked: boolean };
+    astronaut: { unlocked: boolean };
+    officer: { unlocked: boolean };
+  };
+  volume: number;
+  muted: boolean;
+  theme: string;
+  todaySec: number;
+  totalSec: number;
+  totalDays: number;
+}
+
+function Sidebar({
+  open,
+  onClose,
+  currentScene,
+  unlocks,
+  volume,
+  muted,
+  theme,
+  todaySec,
+  totalSec,
+  totalDays,
+}: SidebarProps) {
+  const setCurrentScene = useUserStateStore((s) => s.setCurrentScene);
+  const setVolume = useSettingsStore((s) => s.setVolume);
+  const toggleMute = useSettingsStore((s) => s.toggleMute);
+  const setTheme = useSettingsStore((s) => s.setTheme);
+  const backgroundMode = useSettingsStore((s) => s.backgroundMode);
+  const setBackgroundMode = useSettingsStore((s) => s.setBackgroundMode);
+
+  const sceneOptions: { id: SceneName; label: string; unlocked: boolean; icon: string }[] = [
+    { id: 'mouse_cage', label: 'Mouse Cage', unlocked: unlocks.mouse.unlocked, icon: '🐭' },
+    { id: 'fish_tank', label: 'Fish Tank', unlocked: unlocks.goldfish.unlocked, icon: '🐠' },
+    { id: 'astronaut_space', label: 'Astronaut Space', unlocked: unlocks.astronaut.unlocked, icon: '🚀' },
+    { id: 'officer_room', label: 'Officer Room', unlocked: unlocks.officer.unlocked, icon: '🪖' },
+    { id: 'rainy_pond', label: 'Rainy Pond', unlocked: true, icon: '🐸' },
+  ];
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className={`absolute inset-0 bg-kw-black/60 transition-opacity duration-200 ${
+          open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Panel */}
+      <aside
+        className={`absolute top-0 left-0 h-full w-[320px] max-w-[80%] bg-kw-wood/95 border-r border-kw-black/40 shadow-xl text-kw-white font-mono transition-transform duration-200 ease-out flex flex-col ${
+          open ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        aria-hidden={!open}
+      >
+        <header className="px-5 pt-5 pb-3 border-b border-kw-black/30">
+          <h1 className="text-lg tracking-widest font-bold">KEEP WATCH</h1>
+          <p className="text-[10px] text-kw-white/60 mt-1">under quiet, gentle observation</p>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 text-xs">
+          {/* SCENES */}
+          <section>
+            <h2 className="text-[10px] text-kw-white/50 tracking-wider mb-2">SCENE</h2>
+            <div className="space-y-1">
+              {sceneOptions.map((s) => (
+                <button
+                  key={s.id + s.label}
+                  onClick={() => setCurrentScene(s.id)}
+                  disabled={!s.unlocked}
+                  className={`w-full text-left px-3 py-2 rounded flex items-center gap-2 transition-colors ${
+                    currentScene === s.id
+                      ? 'bg-kw-black/40 border border-kw-white/40'
+                      : 'bg-kw-black/20 border border-transparent hover:bg-kw-black/30'
+                  } ${!s.unlocked ? 'opacity-40 cursor-not-allowed' : ''}`}
+                >
+                  <span>{s.icon}</span>
+                  <span>{s.label}</span>
+                  {!s.unlocked && <span className="ml-auto text-[10px]">locked</span>}
+                </button>
+              ))}
+              {/* Slot 5 placeholder — shows after all 4 unlocked */}
+              {unlocks.goldfish.unlocked &&
+                unlocks.astronaut.unlocked &&
+                unlocks.officer.unlocked && (
+                  <div className="px-3 py-2 rounded bg-kw-black/10 border border-dashed border-kw-white/15 text-kw-white/30 text-[10px]">
+                    ❓ ··· coming soon
+                  </div>
+                )}
+            </div>
+          </section>
+
+          {/* BACKGROUND (time-of-day + mood overlays) */}
+          <section>
+            <h2 className="text-[10px] text-kw-white/50 tracking-wider mb-2">BACKGROUND</h2>
+            <div className="grid grid-cols-3 gap-1">
+              {(
+                [
+                  { id: 'auto', label: 'Auto', icon: '⟲' },
+                  { id: 'morning', label: 'Morning', icon: '🌅' },
+                  { id: 'day', label: 'Day', icon: '☀️' },
+                  { id: 'dusk', label: 'Dusk', icon: '🌇' },
+                  { id: 'night', label: 'Night', icon: '🌙' },
+                  { id: 'deep_night', label: 'Deep', icon: '🌌' },
+                  { id: 'warm', label: 'Warm', icon: '🔥' },
+                  { id: 'cool', label: 'Cool', icon: '❄️' },
+                  { id: 'sepia', label: 'Sepia', icon: '📜' },
+                ] as const
+              ).map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setBackgroundMode(p.id)}
+                  className={`px-2 py-1.5 rounded border transition-colors text-[10px] ${
+                    backgroundMode === p.id
+                      ? 'bg-kw-black/50 border-kw-white/40'
+                      : 'bg-kw-black/15 border-transparent hover:bg-kw-black/30'
+                  }`}
+                >
+                  <div className="text-sm leading-none">{p.icon}</div>
+                  <div className="mt-0.5">{p.label}</div>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* VOLUME */}
+          <section>
+            <h2 className="text-[10px] text-kw-white/50 tracking-wider mb-2">VOLUME</h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggleMute}
+                className="w-7 h-7 flex items-center justify-center rounded bg-kw-black/30 hover:bg-kw-black/50 border border-kw-white/20"
+                aria-label="Mute"
+              >
+                {muted || volume === 0 ? '🔇' : '🔊'}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={muted ? 0 : volume}
+                onChange={(e) => setVolume(parseInt(e.target.value, 10))}
+                className="flex-1 accent-kw-pink"
+              />
+              <span className="w-8 text-right text-[10px] text-kw-white/60">
+                {muted ? 0 : volume}
+              </span>
+            </div>
+          </section>
+
+          {/* THEME — hand-curated color palettes */}
+          <section>
+            <h2 className="text-[10px] text-kw-white/50 tracking-wider mb-2">THEME · color palette</h2>
+            <div className="grid grid-cols-2 gap-1">
+              {(
+                [
+                  { id: 'classic',    label: 'Classic',    swatches: ['#F4EFE6', '#8B5E3C', '#7AAFBF'] },
+                  { id: 'cheese_sky', label: 'Cheese Sky', swatches: ['#F4D86C', '#5B9BD5', '#F4F0D8'] },
+                  { id: 'mint_choco', label: 'Mint Choco', swatches: ['#B8E0C8', '#3A2018', '#8AD0AA'] },
+                  { id: 'sakura',     label: 'Sakura',     swatches: ['#F8C8D8', '#A86878', '#E0B0BC'] },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTheme(t.id)}
+                  className={`px-2 py-2 rounded border transition-colors ${
+                    theme === t.id
+                      ? 'bg-kw-black/40 border-kw-white/40'
+                      : 'bg-kw-black/15 border-transparent hover:bg-kw-black/30'
+                  }`}
+                >
+                  <div className="flex gap-0.5 mb-1.5 justify-center">
+                    {t.swatches.map((c, i) => (
+                      <span
+                        key={i}
+                        className="block w-3 h-3 rounded-sm border border-kw-black/30"
+                        style={{ background: c }}
+                      />
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-center">{t.label}</div>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* STATS */}
+          <section>
+            <h2 className="text-[10px] text-kw-white/50 tracking-wider mb-2">STATS</h2>
+            <div className="space-y-1 text-[11px] leading-relaxed">
+              <div className="flex justify-between"><span className="text-kw-white/60">Today</span><span>{formatHM(todaySec)}</span></div>
+              <div className="flex justify-between"><span className="text-kw-white/60">Total</span><span>{formatHM(totalSec)}</span></div>
+              <div className="flex justify-between"><span className="text-kw-white/60">Days</span><span>{totalDays}</span></div>
+            </div>
+          </section>
+        </div>
+
+        <footer className="px-5 py-3 border-t border-kw-black/30 text-[10px] text-kw-white/40">
+          <p>✍ ABOUT · <span className="opacity-60">soon</span></p>
+        </footer>
+      </aside>
+    </>
   );
 }
 

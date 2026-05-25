@@ -40,8 +40,132 @@ export interface CardContent {
   restMinutes?: number;
   /** Pomodoro total cycles */
   totalCycles?: number;
+  /** Which Pomodoro setting is currently focused for scroll adjustment */
+  pomodoroFocus?: 'cycles' | 'work' | 'rest';
   /** During flip animation: 0..1 progress (0 or undefined = no flip). */
   flipProgress?: number;
+}
+
+/** Returns rectangles for each Pomodoro setting zone on the card back,
+ *  in canvas pixel coordinates. Used for hit detection in App.tsx. */
+export function getPomodoroZones(state: CardState) {
+  const { x, y, w, h } = getCardRect(state);
+  return {
+    cycles: { x, y, w, h: 9 },        // top half (tomato icons)
+    work: { x, y: y + 9, w: w / 2, h: h - 9 },
+    rest: { x: x + w / 2, y: y + 9, w: w / 2, h: h - 9 },
+  };
+}
+
+/** Returns rectangles for the TIMER / POMO mode toggle tabs above the card,
+ *  used for both rendering and hit detection. */
+export function getModeToggleRects(state: CardState) {
+  const cardRect = getCardRect(state);
+  const tabW = 38;
+  const tabH = 12;
+  const gap = 4;
+  const totalW = tabW * 2 + gap;
+  const startX = state.centerX - totalW / 2;
+  const toggleY = cardRect.y - tabH - 2;
+  return {
+    timer: { x: startX, y: toggleY, w: tabW, h: tabH },
+    pomo: { x: startX + tabW + gap, y: toggleY, w: tabW, h: tabH },
+  };
+}
+
+/** Renders the TIMER / POMODORO toggle as clearly-visible tabs ABOVE the card. */
+export function drawModeToggle(
+  ctx: CanvasRenderingContext2D,
+  state: CardState,
+  currentMode: 'timer' | 'pomodoro'
+) {
+  const rects = getModeToggleRects(state);
+
+  // ----- TIMER tab -----
+  const tActive = currentMode === 'timer';
+  drawTab(ctx, rects.timer.x, rects.timer.y, rects.timer.w, rects.timer.h, 'TIMER', '⏱', tActive);
+
+  // ----- POMO tab -----
+  const pActive = currentMode === 'pomodoro';
+  drawTab(ctx, rects.pomo.x, rects.pomo.y, rects.pomo.w, rects.pomo.h, 'POMO', '🍅', pActive);
+}
+
+/** Draws a single tab — boxed with background, label, and icon. */
+function drawTab(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  label: string,
+  iconEmoji: string,
+  active: boolean
+) {
+  // Tab background
+  ctx.fillStyle = active ? '#A89478' : 'rgba(168, 148, 120, 0.45)';
+  ctx.fillRect(x, y, w, h);
+
+  // Border (top + sides; bottom seamless with card area)
+  ctx.fillStyle = active ? COLORS.black : 'rgba(42, 33, 40, 0.5)';
+  ctx.fillRect(x, y, w, 1);     // top
+  ctx.fillRect(x, y, 1, h);     // left
+  ctx.fillRect(x + w - 1, y, 1, h); // right
+
+  // Active indicator: small filled triangle at top center
+  if (active) {
+    ctx.fillStyle = COLORS.black;
+    ctx.fillRect(x + w / 2 - 1, y - 2, 3, 1);
+    ctx.fillRect(x + w / 2, y - 1, 1, 1);
+  }
+
+  // Draw a small pixel-art icon (since emoji won't fit our pixel canvas well)
+  if (iconEmoji === '⏱') {
+    // Pixel clock icon — 5x5
+    const ix = x + 4;
+    const iy = y + 3;
+    ctx.fillStyle = active ? COLORS.black : 'rgba(42, 33, 40, 0.6)';
+    // Clock outline (circle-ish)
+    ctx.fillRect(ix + 1, iy, 3, 1);
+    ctx.fillRect(ix + 1, iy + 4, 3, 1);
+    ctx.fillRect(ix, iy + 1, 1, 3);
+    ctx.fillRect(ix + 4, iy + 1, 1, 3);
+    // Hands (vertical + horizontal)
+    ctx.fillRect(ix + 2, iy + 1, 1, 2);
+    ctx.fillRect(ix + 2, iy + 2, 2, 1);
+  } else {
+    // Mini tomato icon — 5x6
+    const ix = x + 4;
+    const iy = y + 3;
+    // Leaf
+    ctx.fillStyle = '#5A6B4F';
+    ctx.fillRect(ix + 1, iy, 2, 1);
+    ctx.fillStyle = '#7B9268';
+    ctx.fillRect(ix + 1, iy + 1, 3, 1);
+    // Tomato body
+    ctx.fillStyle = '#C44536';
+    ctx.fillRect(ix, iy + 2, 5, 1);
+    ctx.fillRect(ix, iy + 3, 5, 1);
+    ctx.fillRect(ix + 1, iy + 4, 3, 1);
+    // Highlight
+    ctx.fillStyle = '#E36854';
+    ctx.fillRect(ix + 1, iy + 3, 1, 1);
+    // Outline (corners)
+    ctx.fillStyle = active ? COLORS.black : 'rgba(42, 33, 40, 0.6)';
+    ctx.fillRect(ix, iy + 2, 1, 1);
+    ctx.fillRect(ix + 4, iy + 2, 1, 1);
+  }
+
+  // Text label at the right of icon
+  const { w: textW } = measurePixelText(label, 1);
+  drawPixelText(
+    ctx,
+    label,
+    x + 11,
+    y + 3,
+    active ? COLORS.black : 'rgba(42, 33, 40, 0.7)',
+    1
+  );
+  void textW;
 }
 
 /** Returns the fold-corner rect (8×8 px in canvas coords). */
@@ -76,6 +200,54 @@ function drawCardFront(
   drawPixelText(ctx, text, textX, textY, COLORS.black, 1);
 }
 
+/** Draws a single small tomato (with leaf on top). 5×7 pixel sprite. */
+function drawTomato(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number
+) {
+  // Pattern (5 wide × 7 tall):
+  //   row 0: . L L . .   (leaf left tip)
+  //   row 1: . L L L .   (leaf body)
+  //   row 2: R R R R R   (top of tomato)
+  //   row 3: R H H R R   (highlight)
+  //   row 4: R R R R R
+  //   row 5: R R R R R
+  //   row 6: . R R R .   (rounded bottom)
+  const RED = '#C44536';
+  const RED_HI = '#E36854';
+  const LEAF = '#7B9268';
+  const LEAF_DARK = '#5A6B4F';
+  const OUTLINE = '#2A2128';
+
+  // Leaf (top)
+  ctx.fillStyle = LEAF;
+  ctx.fillRect(x + 1, y, 2, 1);     // row 0
+  ctx.fillRect(x + 1, y + 1, 3, 1); // row 1
+  ctx.fillStyle = LEAF_DARK;
+  ctx.fillRect(x + 2, y, 1, 1);     // dark tip on leaf
+
+  // Tomato body (rounded square)
+  ctx.fillStyle = RED;
+  // Top edge slightly inset
+  ctx.fillRect(x, y + 2, 5, 1);
+  ctx.fillRect(x, y + 3, 5, 1);
+  ctx.fillRect(x, y + 4, 5, 1);
+  ctx.fillRect(x, y + 5, 5, 1);
+  ctx.fillRect(x + 1, y + 6, 3, 1); // rounded bottom
+
+  // Highlight on upper-left
+  ctx.fillStyle = RED_HI;
+  ctx.fillRect(x + 1, y + 3, 2, 1);
+
+  // Outline (subtle, just on corners)
+  ctx.fillStyle = OUTLINE;
+  ctx.fillRect(x, y + 2, 1, 1);     // top-left corner
+  ctx.fillRect(x + 4, y + 2, 1, 1); // top-right corner
+  ctx.fillRect(x, y + 6, 1, 1);     // bottom-left (won't show since not filled there)
+  ctx.fillRect(x + 4, y + 6, 1, 1);
+}
+
 /** Internal: draws the back (Pomodoro) face. */
 function drawCardBack(
   ctx: CanvasRenderingContext2D,
@@ -85,36 +257,71 @@ function drawCardBack(
   h: number,
   workMin: number,
   restMin: number,
-  cycles: number
+  cycles: number,
+  focus: 'cycles' | 'work' | 'rest' = 'work'
 ) {
-  // Slightly darker wood for the back, with reverse grain direction
+  // Slightly darker wood for the back
   ctx.fillStyle = '#9B8568';
   ctx.fillRect(x, y, w, h);
   ctx.fillStyle = '#806A4F';
   ctx.fillRect(x + 4, y, 1, h);
   ctx.fillRect(x + w - 5, y, 1, h);
 
-  // Row 1: tomato icons (small 4×4 red squares) — one per cycle
-  const tomatoY = y + 4;
-  const totalIconWidth = cycles * 5 - 1;
+  // ===== TOP: tomato icons (cycles) =====
+  // Highlight zone if cycles focused
+  if (focus === 'cycles') {
+    ctx.fillStyle = 'rgba(244, 239, 230, 0.20)';
+    ctx.fillRect(x + 1, y + 1, w - 2, 9);
+  }
+  // Tomatoes — 5×6 pattern, with clear shape + leaf + highlight
+  const TOMATO_W = 5;
+  const TOMATO_H = 7; // 6 body + 1 leaf above
+  const gap = 1;
+  const totalIconWidth = cycles * (TOMATO_W + gap) - gap;
   const iconStartX = x + Math.floor((w - totalIconWidth) / 2);
-  ctx.fillStyle = '#C44536';
+  const tomatoY = y + 2;
   for (let i = 0; i < cycles; i++) {
-    ctx.fillRect(iconStartX + i * 5, tomatoY, 4, 4);
-    // tiny stem
-    ctx.fillStyle = COLORS.green;
-    ctx.fillRect(iconStartX + i * 5 + 1, tomatoY - 1, 2, 1);
-    ctx.fillStyle = '#C44536';
+    drawTomato(ctx, iconStartX + i * (TOMATO_W + gap), tomatoY);
   }
 
-  // Row 2: "WORK / REST" small text
-  const label = `${workMin}/${restMin}`;
-  const { w: lw } = measurePixelText(label, 1);
+  // ===== BOTTOM: work minutes (left) + rest minutes (right) =====
+  const bottomY = y + 11;
+  const bottomH = h - 11;
+  const midX = x + w / 2;
+
+  // Highlight active zone
+  if (focus === 'work') {
+    ctx.fillStyle = 'rgba(244, 239, 230, 0.18)';
+    ctx.fillRect(x + 1, bottomY, w / 2 - 1, bottomH - 1);
+  } else if (focus === 'rest') {
+    ctx.fillStyle = 'rgba(244, 239, 230, 0.18)';
+    ctx.fillRect(midX, bottomY, w / 2 - 1, bottomH - 1);
+  }
+
+  // Center divider line
+  ctx.fillStyle = 'rgba(42, 33, 40, 0.4)';
+  ctx.fillRect(Math.floor(midX), bottomY + 1, 1, bottomH - 2);
+
+  // Work value (left half)
+  const workText = String(workMin);
+  const { w: ww } = measurePixelText(workText, 1);
   drawPixelText(
     ctx,
-    label,
-    x + Math.floor((w - lw) / 2),
-    y + 12,
+    workText,
+    x + Math.floor((w / 2 - ww) / 2),
+    bottomY + 2,
+    COLORS.black,
+    1
+  );
+
+  // Rest value (right half)
+  const restText = String(restMin);
+  const { w: rw } = measurePixelText(restText, 1);
+  drawPixelText(
+    ctx,
+    restText,
+    Math.floor(midX) + Math.floor((w / 2 - rw) / 2),
+    bottomY + 2,
     COLORS.black,
     1
   );
@@ -162,7 +369,8 @@ export function drawCard(
       h,
       content.workMinutes ?? 25,
       content.restMinutes ?? 5,
-      content.totalCycles ?? 4
+      content.totalCycles ?? 4,
+      content.pomodoroFocus
     );
   }
 

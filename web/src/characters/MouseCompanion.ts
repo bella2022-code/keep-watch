@@ -14,7 +14,7 @@
 
 import { COLORS } from '../core/colors';
 import { drawBubble } from './Bubble';
-import { WHEEL_X, WHEEL_HUB_Y, BOWL_X } from '../scenes/MouseCage';
+import { WHEEL_X, WHEEL_HUB_Y, WHEEL_RADIUS, BOWL_X } from '../scenes/MouseCage';
 
 type SolidVariant = {
   kind: 'solid';
@@ -520,7 +520,7 @@ export function drawCompanions(ctx: CanvasRenderingContext2D) {
       // Draw mouse compressed inside the wheel ring
       ctx.save();
       ctx.beginPath();
-      ctx.arc(WHEEL_X, WHEEL_HUB_Y, 13, 0, Math.PI * 2);
+      ctx.arc(WHEEL_X, WHEEL_HUB_Y, WHEEL_RADIUS - 1, 0, Math.PI * 2);
       ctx.clip();
       drawCompanionAt(ctx, c, WHEEL_X, wheelBodyY, false);
       ctx.restore();

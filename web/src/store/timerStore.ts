@@ -16,12 +16,15 @@ export type Phase = 'idle' | 'focusing' | 'completing' | 'revealing';
 export type Mode = 'timer' | 'pomodoro';
 export type Segment = 'work' | 'rest';
 export type RevealCharacter = 'goldfish' | 'astronaut' | 'officer';
+export type PomodoroFocus = 'cycles' | 'work' | 'rest';
 
 interface TimerState {
   mode: Mode;
   phase: Phase;
   flipProgress: number; // 0..1 during card flip animation; 0 otherwise
   flipDirection: 'to-pomodoro' | 'to-timer' | null;
+  /** When >0, the timer is paused. Total accumulated pause ms is added back to startedAt on resume. */
+  pausedAt: number;
 
   // Timer mode
   setMinutes: number;
@@ -32,6 +35,8 @@ interface TimerState {
   totalCycles: number;
   currentCycle: number; // 1..totalCycles
   currentSegment: Segment;
+  /** Which Pomodoro setting is currently being edited (scroll/arrow target). */
+  pomodoroFocus: PomodoroFocus;
 
   // Active session
   sessionTotalMs: number; // length of the current segment / Timer session
@@ -47,12 +52,15 @@ interface TimerState {
 
   // Actions
   adjustMinutes: (delta: number) => void;
+  setPomodoroFocus: (f: PomodoroFocus) => void;
   flipMode: () => void;
   start: () => void;
   startDebug: (seconds: number) => void;
   tick: (now: number) => void;
   complete: () => void;
   cancel: () => void;
+  pause: () => void;
+  resume: () => void;
   startReveal: (character: RevealCharacter) => void;
   finishReveal: () => void;
 }
@@ -75,28 +83,54 @@ export const useTimerStore = create<TimerState>((set, get) => ({
   totalCycles: 4,
   currentCycle: 1,
   currentSegment: 'work',
+  pomodoroFocus: 'work',
 
   sessionTotalMs: 0,
   remainingMs: 0,
   startedAt: 0,
   accumulatedWorkMs: 0,
+  pausedAt: 0,
 
   completionStartedAt: 0,
   revealStartedAt: 0,
   revealCharacter: null,
 
   adjustMinutes: (delta) => {
-    if (get().phase !== 'idle') return;
-    if (get().mode === 'timer') {
-      const next = get().setMinutes + delta * STEP_MINUTES;
+    const s = get();
+    if (s.phase !== 'idle') return;
+    if (s.mode === 'timer') {
+      const next = s.setMinutes + delta * STEP_MINUTES;
       set({
         setMinutes: Math.max(MIN_MINUTES, Math.min(MAX_MINUTES, next)),
       });
-    } else {
-      // Pomodoro: adjust cycle count by 1
-      const next = get().totalCycles + delta;
-      set({ totalCycles: Math.max(1, Math.min(8, next)) });
+      return;
     }
+    // Pomodoro: adjust the currently focused setting
+    switch (s.pomodoroFocus) {
+      case 'work': {
+        // Work: 5..90 minutes, step 5
+        const next = s.workMinutes + delta * 5;
+        set({ workMinutes: Math.max(5, Math.min(90, next)) });
+        break;
+      }
+      case 'rest': {
+        // Rest: 1..30 minutes, step 1
+        const next = s.restMinutes + delta;
+        set({ restMinutes: Math.max(1, Math.min(30, next)) });
+        break;
+      }
+      case 'cycles': {
+        // Cycles: 1..8
+        const next = s.totalCycles + delta;
+        set({ totalCycles: Math.max(1, Math.min(8, next)) });
+        break;
+      }
+    }
+  },
+
+  setPomodoroFocus: (f) => {
+    if (get().phase !== 'idle') return;
+    set({ pomodoroFocus: f });
   },
 
   flipMode: () => {
@@ -173,6 +207,7 @@ export const useTimerStore = create<TimerState>((set, get) => ({
   tick: (now) => {
     const s = get();
     if (s.phase !== 'focusing') return;
+    if (s.pausedAt > 0) return; // paused — don't advance
     const elapsed = now - s.startedAt;
     const remaining = Math.max(0, s.sessionTotalMs - elapsed);
     set({ remainingMs: remaining });
@@ -259,6 +294,20 @@ export const useTimerStore = create<TimerState>((set, get) => ({
       });
       return;
     }
+    if (
+      userState.total_focus_days >= 14 &&
+      !userState.unlocks.officer.unlocked
+    ) {
+      set({
+        phase: 'revealing',
+        revealStartedAt: performance.now(),
+        revealCharacter: 'officer',
+        remainingMs: 0,
+        completionStartedAt: 0,
+        sessionTotalMs: 0,
+      });
+      return;
+    }
     set({
       phase: 'idle',
       remainingMs: 0,
@@ -295,6 +344,22 @@ export const useTimerStore = create<TimerState>((set, get) => ({
       accumulatedWorkMs: 0,
       currentCycle: 1,
       currentSegment: 'work',
+    });
+  },
+
+  pause: () => {
+    const s = get();
+    if (s.phase !== 'focusing' || s.pausedAt > 0) return;
+    set({ pausedAt: performance.now() });
+  },
+
+  resume: () => {
+    const s = get();
+    if (s.pausedAt === 0) return;
+    const pausedDuration = performance.now() - s.pausedAt;
+    set({
+      startedAt: s.startedAt + pausedDuration,
+      pausedAt: 0,
     });
   },
 

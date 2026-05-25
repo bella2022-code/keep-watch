@@ -8,6 +8,7 @@
 
 import { COLORS } from '../core/colors';
 import { NATIVE_WIDTH, NATIVE_HEIGHT } from '../core/canvas';
+import { getCurrentPalette } from '../core/theme';
 
 const PORTHOLE_CX = 240;
 const PORTHOLE_CY = 130;
@@ -58,14 +59,16 @@ export function drawAstronautSpace(
   ctx: CanvasRenderingContext2D,
   timeMs: number
 ) {
+  const palette = getCurrentPalette();
+
   // Cabin interior
-  ctx.fillStyle = '#1B2233';
+  ctx.fillStyle = palette.spaceCabin;
   ctx.fillRect(0, 0, NATIVE_WIDTH, NATIVE_HEIGHT);
 
   // Cabin floor / wall divider
-  ctx.fillStyle = '#262C3D';
+  ctx.fillStyle = palette.spaceFloor;
   ctx.fillRect(0, 230, NATIVE_WIDTH, NATIVE_HEIGHT - 230);
-  ctx.fillStyle = '#0E121C';
+  ctx.fillStyle = palette.spaceFloorShadow;
   ctx.fillRect(0, 230, NATIVE_WIDTH, 1);
 
   // Floor panel lines

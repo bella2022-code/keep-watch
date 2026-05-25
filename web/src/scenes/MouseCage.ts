@@ -7,13 +7,14 @@
 
 import { COLORS } from '../core/colors';
 import { NATIVE_WIDTH, NATIVE_HEIGHT } from '../core/canvas';
+import { getCurrentPalette } from '../core/theme';
 
 const FLOOR_Y = 232;
 
 /** Wheel screen position (center of wheel hub). */
 export const WHEEL_X = 130;
-export const WHEEL_HUB_Y = 218;
-export const WHEEL_RADIUS = 14;
+export const WHEEL_HUB_Y = 210;
+export const WHEEL_RADIUS = 20;
 
 /** Food bowl screen position (center of bowl). */
 export const BOWL_X = 360;
@@ -27,16 +28,18 @@ function getWheelAngle(timeMs: number, spinning: boolean): number {
 }
 
 export function drawMouseCage(ctx: CanvasRenderingContext2D) {
+  const palette = getCurrentPalette();
+
   // Wall
-  ctx.fillStyle = '#6B4528';
+  ctx.fillStyle = palette.cageWall;
   ctx.fillRect(0, 0, NATIVE_WIDTH, FLOOR_Y - 52);
 
   // Floor
-  ctx.fillStyle = COLORS.wood;
+  ctx.fillStyle = palette.cageFloor;
   ctx.fillRect(0, FLOOR_Y - 52, NATIVE_WIDTH, NATIVE_HEIGHT - (FLOOR_Y - 52));
 
   // Wall/floor seam
-  ctx.fillStyle = '#5A3920';
+  ctx.fillStyle = palette.cageWallShadow;
   ctx.fillRect(0, FLOOR_Y - 54, NATIVE_WIDTH, 2);
 
   // Subtle plank lines
@@ -62,15 +65,31 @@ export function drawMouseCage(ctx: CanvasRenderingContext2D) {
   ctx.fillRect(hayX + 6, hayY + 4, 38, 6);
   ctx.fillRect(hayX + 14, hayY, 22, 4);
 
-  // Cardboard hideout (left)
-  const boxX = 30;
-  const boxY = FLOOR_Y - 30;
-  ctx.fillStyle = '#A07853';
-  ctx.fillRect(boxX, boxY, 50, 30);
-  ctx.fillStyle = '#7D5A3D';
-  ctx.fillRect(boxX, boxY, 50, 2);
+  // Cardboard hideout (left) — bigger
+  const boxX = 20;
+  const boxY = FLOOR_Y - 42;
+  const boxW = 70;
+  const boxH = 42;
+  ctx.fillStyle = palette.cageBox;
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+  // Top edge highlight
+  ctx.fillStyle = palette.cageBoxTop;
+  ctx.fillRect(boxX, boxY, boxW, 3);
+  // Side seam suggesting cardboard fold
+  ctx.fillStyle = palette.cageBoxSeam;
+  ctx.fillRect(boxX + boxW - 1, boxY, 1, boxH);
+  // Doorway (centered, taller)
   ctx.fillStyle = COLORS.black;
-  ctx.fillRect(boxX + 18, boxY + 12, 14, 18);
+  ctx.fillRect(boxX + 25, boxY + 14, 20, boxH - 14);
+  // Doorway top arch (round corners)
+  ctx.fillRect(boxX + 27, boxY + 12, 16, 2);
+  // Subtle outline
+  ctx.fillStyle = 'rgba(42, 33, 40, 0.4)';
+  ctx.fillRect(boxX, boxY, boxW, 1);
+  ctx.fillRect(boxX, boxY, 1, boxH);
+
+  // Window on the back wall (upper center-right area)
+  drawCageWindow(ctx);
 
   // Light highlight
   const highlightGrad = ctx.createRadialGradient(0, 0, 20, 0, 0, NATIVE_WIDTH * 0.6);
@@ -78,6 +97,70 @@ export function drawMouseCage(ctx: CanvasRenderingContext2D) {
   highlightGrad.addColorStop(1, 'rgba(244, 239, 230, 0)');
   ctx.fillStyle = highlightGrad;
   ctx.fillRect(0, 0, NATIVE_WIDTH, NATIVE_HEIGHT);
+}
+
+/**
+ * Window on the back wall — shows a sky view outside the cage.
+ * The current tint system already affects the whole scene including the
+ * window pane, so the "weather" feel comes naturally.
+ */
+function drawCageWindow(ctx: CanvasRenderingContext2D) {
+  const wx = 270;
+  const wy = 50;
+  const ww = 70;
+  const wh = 60;
+
+  // Wood frame
+  ctx.fillStyle = '#7D5A3D';
+  ctx.fillRect(wx - 3, wy - 3, ww + 6, wh + 6);
+  ctx.fillStyle = '#5A3920';
+  ctx.fillRect(wx - 4, wy - 4, ww + 8, 2);
+  ctx.fillRect(wx - 4, wy + wh + 2, ww + 8, 2);
+
+  // Sky background inside the window — soft blue gradient
+  const skyGrad = ctx.createLinearGradient(wx, wy, wx, wy + wh);
+  skyGrad.addColorStop(0, '#A8C8DC');
+  skyGrad.addColorStop(0.5, '#C8DDE8');
+  skyGrad.addColorStop(1, '#E0E8DC');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(wx, wy, ww, wh);
+
+  // Distant tree silhouettes (faint hills + tree tops)
+  ctx.fillStyle = 'rgba(91, 110, 80, 0.5)';
+  ctx.fillRect(wx, wy + wh - 18, ww, 18);
+  ctx.fillStyle = 'rgba(91, 110, 80, 0.8)';
+  // Tree tops (jagged)
+  const treeTops = [
+    [10, 14], [16, 8], [22, 12], [28, 6], [36, 10],
+    [44, 8], [52, 13], [60, 7],
+  ];
+  for (const [tx, th] of treeTops) {
+    ctx.fillRect(wx + tx, wy + wh - 18 - th, 4, th);
+  }
+
+  // A small cloud or two (off-center)
+  ctx.fillStyle = 'rgba(244, 239, 230, 0.85)';
+  ctx.fillRect(wx + 12, wy + 12, 12, 3);
+  ctx.fillRect(wx + 14, wy + 10, 8, 2);
+  ctx.fillStyle = 'rgba(244, 239, 230, 0.7)';
+  ctx.fillRect(wx + 45, wy + 22, 15, 3);
+  ctx.fillRect(wx + 47, wy + 20, 10, 2);
+
+  // Tiny bird silhouette (flying)
+  ctx.fillStyle = 'rgba(42, 33, 40, 0.5)';
+  ctx.fillRect(wx + 35, wy + 18, 2, 1);
+  ctx.fillRect(wx + 36, wy + 17, 1, 1);
+  ctx.fillRect(wx + 34, wy + 17, 1, 1);
+
+  // Cross-bar (window divider)
+  ctx.fillStyle = '#7D5A3D';
+  ctx.fillRect(wx + Math.floor(ww / 2) - 1, wy, 2, wh);
+  ctx.fillRect(wx, wy + Math.floor(wh / 2) - 1, ww, 2);
+
+  // Frame inner shadow
+  ctx.fillStyle = 'rgba(42, 33, 40, 0.3)';
+  ctx.fillRect(wx, wy, ww, 1);
+  ctx.fillRect(wx, wy, 1, wh);
 }
 
 /**

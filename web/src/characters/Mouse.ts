@@ -13,6 +13,7 @@
  */
 
 import { COLORS } from '../core/colors';
+import { getCurrentPalette } from '../core/theme';
 
 const IDLE_CYCLE_MS = 800;
 const TAIL_CYCLE_MS = 700;
@@ -21,11 +22,6 @@ const BODY_W = 28;
 const BODY_H = 20;
 const EAR_W = 6;
 const EAR_H = 5;
-
-/** Body colors */
-const BODY_LIGHT = COLORS.mouseBody;
-const BODY_BELLY = '#EADCCD';
-const BODY_SHADOW = 'rgba(122, 116, 128, 0.18)';
 
 export interface MouseState {
   x: number;
@@ -99,6 +95,11 @@ function drawBody(
   walkFrame: number,
   feetY: number
 ) {
+  const palette = getCurrentPalette();
+  const BODY_LIGHT = palette.mouseBody;
+  const BODY_BELLY = palette.mouseBelly;
+  const BODY_SHADOW = palette.mouseBack;
+
   // Drop shadow
   ctx.fillStyle = 'rgba(42, 33, 40, 0.4)';
   ctx.fillRect(bodyX - 1, feetY, BODY_W + 2, 1);
@@ -249,13 +250,14 @@ export function drawMouseWaving(
 ) {
   drawMouse(ctx, state, 0);
 
+  const palette = getCurrentPalette();
   const handCycle = Math.sin((wavePhase / 200) * Math.PI * 2);
   const handDy = Math.round(handCycle * 3);
   const bodyX = Math.round(state.x - BODY_W / 2);
   const bodyY = state.y - BODY_H;
 
   // Arm
-  ctx.fillStyle = BODY_LIGHT;
+  ctx.fillStyle = palette.mouseBody;
   ctx.fillRect(bodyX + BODY_W - 2, bodyY + 3 + handDy, 4, 3);
   // Hand
   ctx.fillStyle = COLORS.pink;

@@ -44,7 +44,7 @@ interface Unlocks {
   officer: Unlock;
 }
 
-export type SceneName = 'mouse_cage' | 'fish_tank' | 'astronaut_space';
+export type SceneName = 'mouse_cage' | 'fish_tank' | 'astronaut_space' | 'officer_room' | 'rainy_pond';
 
 interface UserState {
   version: string;

@@ -9,6 +9,7 @@
 
 import { COLORS } from '../core/colors';
 import { NATIVE_WIDTH, NATIVE_HEIGHT } from '../core/canvas';
+import { getCurrentPalette } from '../core/theme';
 
 const WATER_TOP = 30;
 const SAND_Y = 240;
@@ -58,10 +59,12 @@ function drawPlantSilhouette(
 
 /** Draws the full colored Fish Tank scene. */
 export function drawFishTank(ctx: CanvasRenderingContext2D, timeMs: number) {
+  const palette = getCurrentPalette();
+
   // Water (gradient blue-green)
   const grad = ctx.createLinearGradient(0, WATER_TOP, 0, SAND_Y);
-  grad.addColorStop(0, '#7AAFBF');
-  grad.addColorStop(1, '#3F6C7A');
+  grad.addColorStop(0, palette.tankWaterTop);
+  grad.addColorStop(1, palette.tankWaterBottom);
   ctx.fillStyle = grad;
   ctx.fillRect(0, WATER_TOP, NATIVE_WIDTH, SAND_Y - WATER_TOP);
 
@@ -82,9 +85,9 @@ export function drawFishTank(ctx: CanvasRenderingContext2D, timeMs: number) {
   ctx.fillRect(22, WATER_TOP + 1, NATIVE_WIDTH - 44, 1);
 
   // Sand
-  ctx.fillStyle = '#C7AC7F';
+  ctx.fillStyle = palette.tankSand;
   ctx.fillRect(22, SAND_Y, NATIVE_WIDTH - 44, 8);
-  ctx.fillStyle = '#A88B5C';
+  ctx.fillStyle = palette.tankSandShadow;
   ctx.fillRect(22, SAND_Y, NATIVE_WIDTH - 44, 1);
 
   // Pebbles
